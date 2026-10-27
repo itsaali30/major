@@ -209,6 +209,7 @@ const AdminCatalog = {
                                     <option v-for="sc in allSubCatsFlattened" :value="sc.SubCategoryID">{{ sc.CategorySubName }}</option>
                                  </select>
                               </div>
+                              <div class="col-6">
                                  <label class="small fw-bold text-muted">Brand</label>
                                  <div class="input-group input-group-sm mb-1">
                                     <span class="input-group-text border-end-0 bg-transparent py-0"><i class="bi bi-search" style="font-size: 0.7rem;"></i></span>
@@ -525,40 +526,120 @@ const AdminCatalog = {
     async saveItem() {
        this.saving = true; const token = localStorage.getItem('token');
        try {
-          let mutation = ""; let vars = { ...this.formData };
+          let mutation = ""; let vars = {};
           if (this.modalType === 'category') {
-             if (this.isEditing) mutation = `mutation($id: Int!, $n: String, $i: String) { updateCategory(CategoryID: $id, CategoryName: $n, CategoryImageURL: $i) { CategoryID } }`;
-             else mutation = `mutation($n: String!, $i: String) { createCategory(CategoryName: $n, CategoryImageURL: $i) { CategoryID } }`;
-             vars = { id: vars.CategoryID, n: vars.CategoryName, i: vars.CategoryImageURL };
+             if (this.isEditing) {
+                mutation = `mutation($id: Int!, $n: String!, $i: String) { updateCategory(CategoryID: $id, CategoryName: $n, CategoryImageURL: $i) { CategoryID } }`;
+                vars = { id: parseInt(this.formData.CategoryID), n: this.formData.CategoryName, i: this.formData.CategoryImageURL || null };
+             } else {
+                mutation = `mutation($n: String!, $i: String) { createCategory(CategoryName: $n, CategoryImageURL: $i) { CategoryID } }`;
+                vars = { n: this.formData.CategoryName, i: this.formData.CategoryImageURL || null };
+             }
           }
           else if (this.modalType === 'subcategory') {
-             if (this.isEditing) mutation = `mutation($id: Int!, $n: String, $i: String) { updateSubCategory(SubCategoryID: $id, CategorySubName: $n, SubCategoryImageURL: $i) { SubCategoryID } }`;
-             else mutation = `mutation($cid: Int!, $n: String!, $i: String) { createSubCategory(CategoryID: $cid, CategorySubName: $n, SubCategoryImageURL: $i) { SubCategoryID } }`;
-             vars = { id: vars.SubCategoryID, cid: vars.CategoryID, n: vars.CategorySubName, i: vars.SubCategoryImageURL };
+             const cid = parseInt(this.formData.CategoryID);
+             if (!cid) throw new Error("Please select a parent Category");
+             if (this.isEditing) {
+                mutation = `mutation($id: Int!, $n: String!, $i: String) { updateSubCategory(SubCategoryID: $id, CategorySubName: $n, SubCategoryImageURL: $i) { SubCategoryID } }`;
+                vars = { id: parseInt(this.formData.SubCategoryID), n: this.formData.CategorySubName, i: this.formData.SubCategoryImageURL || null };
+             } else {
+                mutation = `mutation($cid: Int!, $n: String!, $i: String) { createSubCategory(CategoryID: $cid, CategorySubName: $n, SubCategoryImageURL: $i) { SubCategoryID } }`;
+                vars = { cid, n: this.formData.CategorySubName, i: this.formData.SubCategoryImageURL || null };
+             }
           }
           else if (this.modalType === 'product') {
-             const args = { id: vars.ProductID, scid: vars.SubCategoryID, bid: vars.BrandID, n: vars.ProductName, d: vars.ProductDescription, i: vars.ImageURL, t: parseFloat(vars.TaxRate||0), a: !!vars.IsActive };
-             if (this.isEditing) mutation = `mutation($id: Int!, $n: String, $d: String, $i: String, $t: Float, $a: Boolean) { updateProduct(ProductID: $id, ProductName: $n, ProductDescription: $d, ImageURL: $i, TaxRate: $t, IsActive: $a) { ProductID } }`;
-             else mutation = `mutation($scid: Int!, $bid: Int!, $n: String!, $d: String, $i: String, $t: Float, $a: Boolean) { createProduct(SubCategoryID: $scid, BrandID: $bid, ProductName: $n, ProductDescription: $d, ImageURL: $i, TaxRate: $t, IsActive: $a) { ProductID } }`;
-             vars = args;
+             const scid = parseInt(this.formData.SubCategoryID);
+             const bid = parseInt(this.formData.BrandID);
+             if (!this.isEditing && !scid) throw new Error("Please select a Sub-Category");
+             if (!this.isEditing && !bid) throw new Error("Please select a Brand");
+             if (this.isEditing) {
+                mutation = `mutation($id: Int!, $n: String, $d: String, $i: String, $t: Float, $a: Boolean) { updateProduct(ProductID: $id, ProductName: $n, ProductDescription: $d, ImageURL: $i, TaxRate: $t, IsActive: $a) { ProductID } }`;
+                vars = { 
+                   id: parseInt(this.formData.ProductID), 
+                   n: this.formData.ProductName, 
+                   d: this.formData.ProductDescription || null, 
+                   i: this.formData.ImageURL || null, 
+                   t: this.formData.TaxRate !== undefined && this.formData.TaxRate !== '' ? parseFloat(this.formData.TaxRate) : null, 
+                   a: !!this.formData.IsActive 
+                };
+             } else {
+                mutation = `mutation($scid: Int!, $bid: Int!, $n: String!, $d: String, $i: String, $t: Float, $a: Boolean) { createProduct(SubCategoryID: $scid, BrandID: $bid, ProductName: $n, ProductDescription: $d, ImageURL: $i, TaxRate: $t, IsActive: $a) { ProductID } }`;
+                vars = { 
+                   scid, 
+                   bid, 
+                   n: this.formData.ProductName, 
+                   d: this.formData.ProductDescription || null, 
+                   i: this.formData.ImageURL || null, 
+                   t: this.formData.TaxRate !== undefined && this.formData.TaxRate !== '' ? parseFloat(this.formData.TaxRate) : null, 
+                   a: !!this.formData.IsActive 
+                };
+             }
           }
           else if (this.modalType === 'variant') {
-             const vargs = { id: vars.VariantID?parseInt(vars.VariantID):undefined, pid: parseInt(this.formData.ProductID||this.filters.productID), sku: vars.SKU, unit: vars.Unit, mrp: vars.MRP, price: parseFloat(vars.SalePrice||0), size: vars.Size, color: vars.Color, weight: vars.Weight?parseFloat(vars.Weight):null, img: vars.ImageURL, active: !!vars.IsActive, st: vars.IsActive?'Active':'OFS', shelf: parseInt(vars.ShelfID||1) };
-             if (this.isEditing) mutation = `mutation($id: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { updateVariant(VariantID: $id, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID } }`;
-             else mutation = `mutation($pid: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { createVariant(ProductID: $pid, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID } }`;
-             vars = vargs;
+             const pid = parseInt(this.formData.ProductID || this.filters.productID);
+             if (!pid) throw new Error("Please select a Product for this variant");
+             if (this.isEditing) {
+                mutation = `mutation($id: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { updateVariant(VariantID: $id, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID } }`;
+                vars = { 
+                   id: parseInt(this.formData.VariantID), 
+                   sku: this.formData.SKU || null, 
+                   unit: this.formData.Unit || null, 
+                   mrp: this.formData.MRP ? String(this.formData.MRP) : null, 
+                   price: this.formData.SalePrice !== undefined && this.formData.SalePrice !== '' ? parseFloat(this.formData.SalePrice) : null, 
+                   size: this.formData.Size || null, 
+                   color: this.formData.Color || null, 
+                   weight: this.formData.Weight !== undefined && this.formData.Weight !== '' ? parseFloat(this.formData.Weight) : null, 
+                   img: this.formData.ImageURL || null, 
+                   active: !!this.formData.IsActive, 
+                   st: this.formData.IsActive ? 'Active' : 'OFS', 
+                   shelf: parseInt(this.formData.ShelfID || 1) 
+                };
+             } else {
+                mutation = `mutation($pid: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { createVariant(ProductID: $pid, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID } }`;
+                vars = { 
+                   pid, 
+                   sku: this.formData.SKU || null, 
+                   unit: this.formData.Unit || null, 
+                   mrp: this.formData.MRP ? String(this.formData.MRP) : null, 
+                   price: this.formData.SalePrice !== undefined && this.formData.SalePrice !== '' ? parseFloat(this.formData.SalePrice) : null, 
+                   size: this.formData.Size || null, 
+                   color: this.formData.Color || null, 
+                   weight: this.formData.Weight !== undefined && this.formData.Weight !== '' ? parseFloat(this.formData.Weight) : null, 
+                   img: this.formData.ImageURL || null, 
+                   active: !!this.formData.IsActive, 
+                   st: this.formData.IsActive ? 'Active' : 'OFS', 
+                   shelf: parseInt(this.formData.ShelfID || 1) 
+                };
+             }
           }
           else if (this.modalType === 'brand') {
-             if (this.isEditing) mutation = `mutation($id: Int!, $n: String, $log: String, $d: String) { updateBrand(BrandID: $id, BrandName: $n, LogoURL: $log, Description: $d) { BrandID } }`;
-             else mutation = `mutation($n: String!, $log: String, $d: String) { createBrand(BrandName: $n, LogoURL: $log, Description: $d) { BrandID } }`;
-             vars = { id: vars.BrandID, n: vars.BrandName, log: vars.LogoURL, d: vars.Description };
+             if (this.isEditing) {
+                mutation = `mutation($id: Int!, $n: String, $log: String, $d: String) { updateBrand(BrandID: $id, BrandName: $n, LogoURL: $log, Description: $d) { BrandID } }`;
+                vars = { id: parseInt(this.formData.BrandID), n: this.formData.BrandName, log: this.formData.LogoURL || null, d: this.formData.Description || null };
+             } else {
+                mutation = `mutation($n: String!, $log: String, $d: String) { createBrand(BrandName: $n, LogoURL: $log, Description: $d) { BrandID } }`;
+                vars = { n: this.formData.BrandName, log: this.formData.LogoURL || null, d: this.formData.Description || null };
+             }
           }
-          await graphqlRequest(mutation, vars, token); this.closeModal(); this.fetchVariants(); this.refreshStaticData();
+          await graphqlRequest(mutation, vars, token); 
+          this.closeModal(); 
+          await this.refreshStaticData(); 
+          await this.fetchVariants();
        } catch (e) { alert('Error: ' + e.message); } finally { this.saving = false; }
     },
     async deleteItem(type, id) {
        if (!confirm(`Delete this ${type}?`)) return; const token = localStorage.getItem('token');
-       try { await graphqlRequest(`mutation($id: Int!) { deleteVariant(VariantID: $id) }`, { id: parseInt(id) }, token); this.fetchVariants(); } catch (e) { alert(e.message); }
+       try { 
+          let mutation = "";
+          if (type === 'category') mutation = `mutation($id: Int!) { deleteCategory(CategoryID: $id) }`;
+          else if (type === 'subcategory') mutation = `mutation($id: Int!) { deleteSubCategory(SubCategoryID: $id) }`;
+          else if (type === 'brand') mutation = `mutation($id: Int!) { deleteBrand(BrandID: $id) }`;
+          else if (type === 'product') mutation = `mutation($id: Int!) { deleteProduct(ProductID: $id) }`;
+          else mutation = `mutation($id: Int!) { deleteVariant(VariantID: $id) }`;
+          await graphqlRequest(mutation, { id: parseInt(id) }, token); 
+          await this.refreshStaticData();
+          await this.fetchVariants(); 
+       } catch (e) { alert(e.message); }
     },
     async handleImageUpload(event, targetField) {
        const file = event.target.files[0]; if (!file) return; const fd = new FormData(); fd.append('image', file); this.saving = true;

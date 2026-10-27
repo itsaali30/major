@@ -124,7 +124,9 @@ const catalogResolvers = {
 
     // SubCategory CRUD
     createSubCategory: async (_, args) => {
-      return await prisma.subCategories.create({ data: args });
+      const data = { ...args };
+      data.CategoryID = parseInt(data.CategoryID);
+      return await prisma.subCategories.create({ data });
     },
     updateSubCategory: async (_, { SubCategoryID, ...data }) => {
       return await prisma.subCategories.update({
@@ -154,7 +156,10 @@ const catalogResolvers = {
 
     // Product CRUD
     createProduct: async (_, args) => {
-      return await prisma.products.create({ data: args });
+      const data = { ...args };
+      data.SubCategoryID = parseInt(data.SubCategoryID);
+      data.BrandID = parseInt(data.BrandID);
+      return await prisma.products.create({ data });
     },
     updateProduct: async (_, { ProductID, ...data }) => {
       return await prisma.products.update({
@@ -163,18 +168,49 @@ const catalogResolvers = {
       });
     },
     deleteProduct: async (_, { ProductID }) => {
+      await prisma.variants.deleteMany({ where: { ProductID: parseInt(ProductID) } });
       await prisma.products.delete({ where: { ProductID: parseInt(ProductID) } });
       return true;
     },
 
     // Variant CRUD
     createVariant: async (_, args) => {
-      return await prisma.variants.create({ data: args });
+      const data = { ...args };
+      data.ProductID = parseInt(data.ProductID);
+      if (!data.ShelfID) {
+        const firstShelf = await prisma.shelves.findFirst();
+        data.ShelfID = firstShelf ? firstShelf.ShelfID : 1;
+      } else {
+        data.ShelfID = parseInt(data.ShelfID);
+      }
+      if (data.ExpiryDate) data.ExpiryDate = new Date(data.ExpiryDate);
+      const variant = await prisma.variants.create({ data });
+      try {
+        const store = await prisma.stores.findFirst();
+        if (store) {
+          await prisma.stocks.create({
+            data: {
+              StoreID: store.StoreID,
+              VariantID: variant.VariantID,
+              ShelfID: variant.ShelfID,
+              OnHandQty: 0,
+              ReservedQty: 0,
+              AvailableQty: 0
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Initial stock create error:', e.message);
+      }
+      return variant;
     },
     updateVariant: async (_, { VariantID, ...data }) => {
+      const updateData = { ...data };
+      if (updateData.ExpiryDate) updateData.ExpiryDate = new Date(updateData.ExpiryDate);
+      if (updateData.ShelfID) updateData.ShelfID = parseInt(updateData.ShelfID);
       return await prisma.variants.update({
         where: { VariantID: parseInt(VariantID) },
-        data: data
+        data: updateData
       });
     },
     deleteVariant: async (_, { VariantID }) => {
