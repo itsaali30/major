@@ -5,14 +5,19 @@ const GRAPHQL_URL = '/graphql';
 const apiClient = axios.create({
   baseURL: '',
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'apollo-require-preflight': 'true'
   },
+  withCredentials: true,
   timeout: 10000
 });
 
 // Helper function for GraphQL requests using axios
 async function graphqlRequest(query, variables, token) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 
+    'Content-Type': 'application/json',
+    'apollo-require-preflight': 'true'
+  };
   if (token) headers['Authorization'] = 'Bearer ' + token;
 
   try {

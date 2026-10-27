@@ -41,16 +41,18 @@ const Profile = {
 
                 <div v-if="!editMode">
                   <table class="table table-bordered">
-                    <tr><th>ID</th><td>{{ user.UserID }}</td></tr>
-                    <tr><th>First Name</th><td>{{ user.UserNameFirst }}</td></tr>
-                    <tr><th>Last Name</th><td>{{ user.UserNameLast }}</td></tr>
-                    <tr><th>Email</th><td>{{ user.Email }}</td></tr>
-                    <tr><th>Mobile</th><td>{{ user.Mobile || 'Not set' }}</td></tr>
-                    <tr><th>Date of Birth</th><td>{{ formatDate(user.DOB) }}</td></tr>
-                    <tr><th>Gender</th><td>{{ user.Gender }}</td></tr>
-                    <tr><th>Role</th><td><span class="badge" :class="user.Role === 'admin' ? 'bg-danger' : 'bg-primary'">{{ user.Role }}</span></td></tr>
-                    <tr><th>Active</th><td><span class="badge" :class="user.IsActive ? 'bg-success' : 'bg-warning text-dark'">{{ user.IsActive ? 'Yes' : 'No' }}</span></td></tr>
-                    <tr><th>Joined</th><td>{{ formatDate(user.CreatedAt) }}</td></tr>
+                    <tbody>
+                      <tr><th>ID</th><td>{{ user.UserID }}</td></tr>
+                      <tr><th>First Name</th><td>{{ user.UserNameFirst }}</td></tr>
+                      <tr><th>Last Name</th><td>{{ user.UserNameLast }}</td></tr>
+                      <tr><th>Email</th><td>{{ user.Email }}</td></tr>
+                      <tr><th>Mobile</th><td>{{ user.Mobile || 'Not set' }}</td></tr>
+                      <tr><th>Date of Birth</th><td>{{ formatDate(user.DOB) }}</td></tr>
+                      <tr><th>Gender</th><td>{{ user.Gender }}</td></tr>
+                      <tr><th>Role</th><td><span class="badge" :class="user.Role === 'admin' ? 'bg-danger' : 'bg-primary'">{{ user.Role }}</span></td></tr>
+                      <tr><th>Active</th><td><span class="badge" :class="user.IsActive ? 'bg-success' : 'bg-warning text-dark'">{{ user.IsActive ? 'Yes' : 'No' }}</span></td></tr>
+                      <tr><th>Joined</th><td>{{ formatDate(user.CreatedAt) }}</td></tr>
+                    </tbody>
                   </table>
                 </div>
                 <form v-else @submit.prevent="saveProfile">
