@@ -3,11 +3,19 @@ const prisma = new PrismaClient();
 
 const catalogResolvers = {
   Query: {
+    // Categories
     allCategories: async () => {
       return await prisma.categories.findMany({
         orderBy: { CategoryID: 'asc' }
       });
     },
+    category: async (_, { CategoryID }) => {
+      return await prisma.categories.findUnique({
+        where: { CategoryID: parseInt(CategoryID) }
+      });
+    },
+
+    // SubCategories
     allSubCategories: async (_, { CategoryID }) => {
       const where = CategoryID ? { CategoryID: parseInt(CategoryID) } : {};
       return await prisma.subCategories.findMany({
@@ -15,21 +23,41 @@ const catalogResolvers = {
         orderBy: { SubCategoryID: 'asc' }
       });
     },
+    subCategory: async (_, { SubCategoryID }) => {
+      return await prisma.subCategories.findUnique({
+        where: { SubCategoryID: parseInt(SubCategoryID) }
+      });
+    },
+
+    // Brands
     allBrands: async () => {
       return await prisma.brands.findMany({
         orderBy: { BrandID: 'asc' }
       });
     },
+    brand: async (_, { BrandID }) => {
+      return await prisma.brands.findUnique({
+        where: { BrandID: parseInt(BrandID) }
+      });
+    },
+
+    // Products
     allProducts: async (_, { SubCategoryID, BrandID }) => {
       const where = {};
       if (SubCategoryID) where.SubCategoryID = parseInt(SubCategoryID);
       if (BrandID) where.BrandID = parseInt(BrandID);
-      
       return await prisma.products.findMany({
         where,
         orderBy: { ProductID: 'asc' }
       });
     },
+    product: async (_, { ProductID }) => {
+      return await prisma.products.findUnique({
+        where: { ProductID: parseInt(ProductID) }
+      });
+    },
+
+    // Variants
     allVariants: async (_, { ProductID, SubCategoryID, CategoryID, BrandID, Search }) => {
       let productIdsFromFilters = null;
 
@@ -66,18 +94,16 @@ const catalogResolvers = {
       if (ProductID) {
         variantWhere.ProductID = parseInt(ProductID);
       } else if (productIdsFromFilters !== null) {
-        // If we have category/brand filters, the variants MUST belong to those products
         variantWhere.ProductID = { in: productIdsFromFilters };
       }
 
       // 3. Handle SEARCH (Applying to either ProductName OR SKU)
-      if (Search) {
-        // Find products whose names match the search
-        const searchProductWhere = { ProductName: { contains: Search, mode: 'insensitive' } };
+      if (Search && Search.trim()) {
+        const s = Search.trim();
+        const searchProductWhere = { ProductName: { contains: s, mode: 'insensitive' } };
         
-        // If we already have product filters, the search must also respect them
         if (productIdsFromFilters !== null) {
-           searchProductWhere.ProductID = { in: productIdsFromFilters };
+          searchProductWhere.ProductID = { in: productIdsFromFilters };
         }
 
         const matchedProducts = await prisma.products.findMany({
@@ -86,23 +112,26 @@ const catalogResolvers = {
         });
         const productIdsMatchingName = matchedProducts.map(p => p.ProductID);
 
-        // Combine Name Search (Product) and SKU Search (Variant)
         variantWhere.OR = [
-          { SKU: { contains: Search, mode: 'insensitive' } },
+          { SKU: { contains: s, mode: 'insensitive' } },
           { ProductID: { in: productIdsMatchingName } },
-          { Color: { contains: Search, mode: 'insensitive' } },
-          { Size: { contains: Search, mode: 'insensitive' } }
+          { Color: { contains: s, mode: 'insensitive' } },
+          { Size: { contains: s, mode: 'insensitive' } }
         ];
 
-        // Also allow VariantID search if numeric
-        if (!isNaN(parseInt(Search))) {
-          variantWhere.OR.push({ VariantID: parseInt(Search) });
+        if (!isNaN(parseInt(s))) {
+          variantWhere.OR.push({ VariantID: parseInt(s) });
         }
       }
 
       return await prisma.variants.findMany({
         where: variantWhere,
         orderBy: { VariantID: 'asc' }
+      });
+    },
+    variant: async (_, { VariantID }) => {
+      return await prisma.variants.findUnique({
+        where: { VariantID: parseInt(VariantID) }
       });
     }
   },
@@ -118,7 +147,24 @@ const catalogResolvers = {
       });
     },
     deleteCategory: async (_, { CategoryID }) => {
-      await prisma.categories.delete({ where: { CategoryID: parseInt(CategoryID) } });
+      const cid = parseInt(CategoryID);
+      const subCats = await prisma.subCategories.findMany({ where: { CategoryID: cid }, select: { SubCategoryID: true } });
+      const scIds = subCats.map(sc => sc.SubCategoryID);
+      if (scIds.length > 0) {
+        const prods = await prisma.products.findMany({ where: { SubCategoryID: { in: scIds } }, select: { ProductID: true } });
+        const prodIds = prods.map(p => p.ProductID);
+        if (prodIds.length > 0) {
+          const vars = await prisma.variants.findMany({ where: { ProductID: { in: prodIds } }, select: { VariantID: true } });
+          const varIds = vars.map(v => v.VariantID);
+          if (varIds.length > 0) {
+            await prisma.stocks.deleteMany({ where: { VariantID: { in: varIds } } });
+            await prisma.variants.deleteMany({ where: { ProductID: { in: prodIds } } });
+          }
+          await prisma.products.deleteMany({ where: { SubCategoryID: { in: scIds } } });
+        }
+        await prisma.subCategories.deleteMany({ where: { CategoryID: cid } });
+      }
+      await prisma.categories.delete({ where: { CategoryID: cid } });
       return true;
     },
 
@@ -129,13 +175,27 @@ const catalogResolvers = {
       return await prisma.subCategories.create({ data });
     },
     updateSubCategory: async (_, { SubCategoryID, ...data }) => {
+      const updateData = { ...data };
+      if (updateData.CategoryID) updateData.CategoryID = parseInt(updateData.CategoryID);
       return await prisma.subCategories.update({
         where: { SubCategoryID: parseInt(SubCategoryID) },
-        data: data
+        data: updateData
       });
     },
     deleteSubCategory: async (_, { SubCategoryID }) => {
-      await prisma.subCategories.delete({ where: { SubCategoryID: parseInt(SubCategoryID) } });
+      const scid = parseInt(SubCategoryID);
+      const prods = await prisma.products.findMany({ where: { SubCategoryID: scid }, select: { ProductID: true } });
+      const prodIds = prods.map(p => p.ProductID);
+      if (prodIds.length > 0) {
+        const vars = await prisma.variants.findMany({ where: { ProductID: { in: prodIds } }, select: { VariantID: true } });
+        const varIds = vars.map(v => v.VariantID);
+        if (varIds.length > 0) {
+          await prisma.stocks.deleteMany({ where: { VariantID: { in: varIds } } });
+          await prisma.variants.deleteMany({ where: { ProductID: { in: prodIds } } });
+        }
+        await prisma.products.deleteMany({ where: { SubCategoryID: scid } });
+      }
+      await prisma.subCategories.delete({ where: { SubCategoryID: scid } });
       return true;
     },
 
@@ -150,7 +210,19 @@ const catalogResolvers = {
       });
     },
     deleteBrand: async (_, { BrandID }) => {
-      await prisma.brands.delete({ where: { BrandID: parseInt(BrandID) } });
+      const bid = parseInt(BrandID);
+      const prods = await prisma.products.findMany({ where: { BrandID: bid }, select: { ProductID: true } });
+      const prodIds = prods.map(p => p.ProductID);
+      if (prodIds.length > 0) {
+        const vars = await prisma.variants.findMany({ where: { ProductID: { in: prodIds } }, select: { VariantID: true } });
+        const varIds = vars.map(v => v.VariantID);
+        if (varIds.length > 0) {
+          await prisma.stocks.deleteMany({ where: { VariantID: { in: varIds } } });
+          await prisma.variants.deleteMany({ where: { ProductID: { in: prodIds } } });
+        }
+        await prisma.products.deleteMany({ where: { BrandID: bid } });
+      }
+      await prisma.brands.delete({ where: { BrandID: bid } });
       return true;
     },
 
@@ -159,17 +231,34 @@ const catalogResolvers = {
       const data = { ...args };
       data.SubCategoryID = parseInt(data.SubCategoryID);
       data.BrandID = parseInt(data.BrandID);
+      if (data.TaxRate !== undefined && data.TaxRate !== null && data.TaxRate !== '') {
+        data.TaxRate = parseFloat(data.TaxRate);
+      } else {
+        delete data.TaxRate;
+      }
       return await prisma.products.create({ data });
     },
     updateProduct: async (_, { ProductID, ...data }) => {
+      const updateData = { ...data };
+      if (updateData.SubCategoryID) updateData.SubCategoryID = parseInt(updateData.SubCategoryID);
+      if (updateData.BrandID) updateData.BrandID = parseInt(updateData.BrandID);
+      if (updateData.TaxRate !== undefined && updateData.TaxRate !== null && updateData.TaxRate !== '') {
+        updateData.TaxRate = parseFloat(updateData.TaxRate);
+      }
       return await prisma.products.update({
         where: { ProductID: parseInt(ProductID) },
-        data: data
+        data: updateData
       });
     },
     deleteProduct: async (_, { ProductID }) => {
-      await prisma.variants.deleteMany({ where: { ProductID: parseInt(ProductID) } });
-      await prisma.products.delete({ where: { ProductID: parseInt(ProductID) } });
+      const pid = parseInt(ProductID);
+      const vars = await prisma.variants.findMany({ where: { ProductID: pid }, select: { VariantID: true } });
+      const varIds = vars.map(v => v.VariantID);
+      if (varIds.length > 0) {
+        await prisma.stocks.deleteMany({ where: { VariantID: { in: varIds } } });
+        await prisma.variants.deleteMany({ where: { ProductID: pid } });
+      }
+      await prisma.products.delete({ where: { ProductID: pid } });
       return true;
     },
 
@@ -182,6 +271,15 @@ const catalogResolvers = {
         data.ShelfID = firstShelf ? firstShelf.ShelfID : 1;
       } else {
         data.ShelfID = parseInt(data.ShelfID);
+      }
+      if (data.Weight !== undefined && data.Weight !== null && data.Weight !== '') {
+        data.Weight = parseFloat(data.Weight);
+      }
+      if (data.SalePrice !== undefined && data.SalePrice !== null && data.SalePrice !== '') {
+        data.SalePrice = parseFloat(data.SalePrice);
+      }
+      if (data.MRP !== undefined && data.MRP !== null) {
+        data.MRP = String(data.MRP);
       }
       if (data.ExpiryDate) data.ExpiryDate = new Date(data.ExpiryDate);
       const variant = await prisma.variants.create({ data });
@@ -208,13 +306,24 @@ const catalogResolvers = {
       const updateData = { ...data };
       if (updateData.ExpiryDate) updateData.ExpiryDate = new Date(updateData.ExpiryDate);
       if (updateData.ShelfID) updateData.ShelfID = parseInt(updateData.ShelfID);
+      if (updateData.Weight !== undefined && updateData.Weight !== null && updateData.Weight !== '') {
+        updateData.Weight = parseFloat(updateData.Weight);
+      }
+      if (updateData.SalePrice !== undefined && updateData.SalePrice !== null && updateData.SalePrice !== '') {
+        updateData.SalePrice = parseFloat(updateData.SalePrice);
+      }
+      if (updateData.MRP !== undefined && updateData.MRP !== null) {
+        updateData.MRP = String(updateData.MRP);
+      }
       return await prisma.variants.update({
         where: { VariantID: parseInt(VariantID) },
         data: updateData
       });
     },
     deleteVariant: async (_, { VariantID }) => {
-      await prisma.variants.delete({ where: { VariantID: parseInt(VariantID) } });
+      const vid = parseInt(VariantID);
+      await prisma.stocks.deleteMany({ where: { VariantID: vid } });
+      await prisma.variants.delete({ where: { VariantID: vid } });
       return true;
     }
   },
@@ -245,12 +354,15 @@ const catalogResolvers = {
     },
     variants: async (parent) => {
       return await prisma.variants.findMany({ where: { ProductID: parent.ProductID } });
-    }
+    },
+    CreatedAt: (parent) => parent.CreatedAt ? new Date(parent.CreatedAt).toISOString() : null
   },
   Variant: {
     product: async (parent) => {
       return await prisma.products.findUnique({ where: { ProductID: parent.ProductID } });
-    }
+    },
+    CreatedAt: (parent) => parent.CreatedAt ? new Date(parent.CreatedAt).toISOString() : null,
+    ExpiryDate: (parent) => parent.ExpiryDate ? new Date(parent.ExpiryDate).toISOString() : null
   }
 };
 

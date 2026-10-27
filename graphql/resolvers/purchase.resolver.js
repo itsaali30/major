@@ -37,20 +37,24 @@ const purchaseResolvers = {
 
         // Calculate subtotals and total
         let totalAmount = 0;
-        const productVariantIds = Items.map(i => parseInt(i.VariantID));
+        const productVariantIds = (Items || []).map(i => parseInt(i.VariantID));
         const variants = await prisma.variants.findMany({
-          where: { VariantID: { in: productVariantIds } },
-          include: { Product: true }
+          where: { VariantID: { in: productVariantIds } }
+        });
+        const productIds = variants.map(v => v.ProductID);
+        const products = await prisma.products.findMany({
+          where: { ProductID: { in: productIds } }
         });
 
-        const itemsWithStructure = Items.map(item => {
+        const itemsWithStructure = (Items || []).map(item => {
           const v = variants.find(x => x.VariantID === parseInt(item.VariantID));
+          const prod = v ? products.find(p => p.ProductID === v.ProductID) : null;
           const subtotal = (item.Qty || 0) * (item.Cost || 0);
           totalAmount += subtotal;
           
           return {
             VariantID: parseInt(item.VariantID),
-            VariantName: v ? `${v.Product.ProductName} (${v.Size || ''} ${v.Color || ''})` : 'Unknown',
+            VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})` : (v ? v.SKU : 'Unknown'),
             UOM: item.UOM || (v ? v.Unit : 'PCS'),
             Qty: parseInt(item.Qty),
             Cost: parseFloat(item.Cost),
@@ -93,8 +97,11 @@ const purchaseResolvers = {
           let totalAmount = 0;
           const productVariantIds = Items.map(i => parseInt(i.VariantID));
           const variants = await prisma.variants.findMany({
-            where: { VariantID: { in: productVariantIds } },
-            include: { Product: true }
+            where: { VariantID: { in: productVariantIds } }
+          });
+          const productIds = variants.map(v => v.ProductID);
+          const products = await prisma.products.findMany({
+            where: { ProductID: { in: productIds } }
           });
 
           // Delete existing items first for simplicity
@@ -102,11 +109,12 @@ const purchaseResolvers = {
 
           const newItems = Items.map(item => {
             const v = variants.find(x => x.VariantID === parseInt(item.VariantID));
+            const prod = v ? products.find(p => p.ProductID === v.ProductID) : null;
             const subtotal = (item.Qty || 0) * (item.Cost || 0);
             totalAmount += subtotal;
             return {
               VariantID: parseInt(item.VariantID),
-              VariantName: v ? `${v.Product.ProductName} (${v.Size || ''} ${v.Color || ''})` : 'Unknown',
+              VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})` : (v ? v.SKU : 'Unknown'),
               UOM: item.UOM || (v ? v.Unit : 'PCS'),
               Qty: parseInt(item.Qty),
               Cost: parseFloat(item.Cost),
@@ -148,10 +156,14 @@ const purchaseResolvers = {
   },
   PurchaseOrderItem: {
     variant: async (parent) => {
-        return await prisma.variants.findUnique({ 
-            where: { VariantID: parent.VariantID },
-            include: { Product: true }
-        });
+      const variant = await prisma.variants.findUnique({ 
+        where: { VariantID: parent.VariantID }
+      });
+      if (!variant) return null;
+      const product = await prisma.products.findUnique({
+        where: { ProductID: variant.ProductID }
+      });
+      return { ...variant, product };
     }
   }
 };
