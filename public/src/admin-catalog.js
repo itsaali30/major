@@ -345,16 +345,6 @@ const AdminCatalog = {
         </div>
       </div>
     </div>
-
-    <style>
-      .product-header-row td { vertical-align: middle !important; border-top: 1px solid #eee; }
-      .variant-row td { background-color: #fff; border-top: 1px dashed #f0f0f0; }
-      .variant-row:hover td { background-color: #fafafa !important; }
-      .floating-bulk-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: auto; min-width: 500px; z-index: 1100; }
-      .form-select, .form-control { border: 1px solid #e2e8f0; }
-      .form-select:focus, .form-control:focus { border-color: #3182ce; box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1); }
-      .form-check-input:checked { background-color: #0d6efd; border-color: #0d6efd; }
-    </style>
   `,
   data() {
     return {

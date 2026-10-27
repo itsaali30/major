@@ -279,12 +279,6 @@ const AdminPurchase = {
         </div>
       </div>
     </div>
-
-    <style>
-      .po-row:hover { background-color: #f8f9fa; cursor: pointer; }
-      .x-small { font-size: 0.7rem; }
-      .dropdown-menu.show { display: block; }
-    </style>
   `,
   data() {
     return {

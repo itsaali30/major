@@ -198,11 +198,6 @@ const Bank = {
         </div>
       </div>
     </div>
-    <style>
-        .x-small { font-size: 0.75rem; }
-        .btn-xs { padding: 0.1rem 0.4rem; font-size: 0.75rem; }
-        .bank-details { padding: 10px; background: rgba(0,0,0,0.02); border-radius: 6px; margin-top: 10px; }
-    </style>
   `,
   data() {
     return {
