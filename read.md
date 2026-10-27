@@ -1,0 +1,1 @@
+docker exec -i major_postgres psql -U postgres -d ecommerce_db -c 'UPDATE "Users" SET "Role" = '\''superadmin'\'', "IsActive" = true, "IsApproved" = true, "ApprovedAt" = NOW() WHERE "Mobile" = '\''9985699757'\'';'
