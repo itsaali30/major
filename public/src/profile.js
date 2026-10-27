@@ -241,7 +241,9 @@ const Profile = {
     },
     formatDate(dateString) { 
       if (!dateString) return 'N/A';
-      const date = new Date(dateString);
+      const num = Number(dateString);
+      const date = !isNaN(num) && num > 1000000000 ? new Date(num) : new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
       return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
     }
   }

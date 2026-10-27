@@ -544,7 +544,13 @@ const AdminPurchase = {
           this.refreshData();
        } catch (e) { alert(e.message); }
     },
-    formatDate(d) { if(!d) return 'N/A'; return new Date(d).toLocaleDateString(); },
+    formatDate(d) {
+      if (!d) return 'N/A';
+      const num = Number(d);
+      const date = !isNaN(num) && num > 1000000000 ? new Date(num) : new Date(d);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    },
     statusBadge(s) {
        const map = { draft: 'bg-secondary', pending: 'bg-warning', ordered: 'bg-primary', received: 'bg-success', cancelled: 'bg-danger' };
        return map[s] || 'bg-dark';

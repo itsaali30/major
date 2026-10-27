@@ -429,7 +429,10 @@ const AdminApprovals = {
     },
     formatDate(dateString) {
       if (!dateString) return 'N/A';
-      return new Date(dateString).toLocaleDateString('en-IN', {
+      const num = Number(dateString);
+      const date = !isNaN(num) && num > 1000000000 ? new Date(num) : new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-IN', {
         day: '2-digit', month: 'short', year: 'numeric'
       });
     },

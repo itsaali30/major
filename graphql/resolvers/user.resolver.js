@@ -1181,6 +1181,10 @@ const resolvers = {
   },
 
   Users: {
+    CreatedAt: (parent) => parent.CreatedAt instanceof Date ? parent.CreatedAt.toISOString() : (parent.CreatedAt || null),
+    LastActiveAt: (parent) => parent.LastActiveAt instanceof Date ? parent.LastActiveAt.toISOString() : (parent.LastActiveAt || null),
+    DOB: (parent) => parent.DOB instanceof Date ? parent.DOB.toISOString().split('T')[0] : (parent.DOB || null),
+    ApprovedAt: (parent) => parent.ApprovedAt instanceof Date ? parent.ApprovedAt.toISOString() : (parent.ApprovedAt || null),
     WarehouseID: async (parent) => {
       const staff = await prisma.staff.findFirst({ where: { UserID: parent.UserID } });
       if (staff) {

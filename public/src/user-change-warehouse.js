@@ -161,7 +161,11 @@ const UserChangeWarehouse = {
       };
     },
     formatDate(dateStr) {
-      return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      if (!dateStr) return 'N/A';
+      const num = Number(dateStr);
+      const date = !isNaN(num) && num > 1000000000 ? new Date(num) : new Date(dateStr);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     }
   }
 };

@@ -258,8 +258,9 @@ const AdminUsers = {
     },
     formatDateTime(value) {
       if (!value) return 'N/A';
-      const date = new Date(value);
-      if (isNaN(date.getTime())) return 'Invalid Date';
+      const num = Number(value);
+      const date = !isNaN(num) && num > 1000000000 ? new Date(num) : new Date(value);
+      if (isNaN(date.getTime())) return 'N/A';
       return date.toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata',
         day: '2-digit',
