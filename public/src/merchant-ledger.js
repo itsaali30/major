@@ -28,11 +28,17 @@ const AdminMerchantLedger = {
           </div>
           <div class="text-muted small mt-1" v-if="ledger">
             <span class="me-3" v-if="ledger.GSTIN"><strong>GSTIN:</strong> {{ ledger.GSTIN }}</span>
-            <span class="me-3" v-if="ledger.Contact"><strong>Contact:</strong> {{ ledger.Contact }}</span>
+            <span class="me-3" v-if="ledger.Contact || ledger.WhatsApp">
+               <i class="bi bi-whatsapp text-success me-1"></i>
+               <strong>WhatsApp / Contact:</strong> {{ ledger.WhatsApp || ledger.Contact }}
+            </span>
             <span v-if="ledger.Address"><strong>Address:</strong> {{ ledger.Address }}</span>
           </div>
         </div>
         <div class="d-flex gap-2">
+          <button class="btn btn-outline-success fw-bold px-3 shadow-sm" @click="sendWhatsAppLedgerStatement" v-if="ledger" title="Send full statement to merchant on WhatsApp">
+            <i class="bi bi-whatsapp me-1"></i> Share Statement
+          </button>
           <button class="btn btn-outline-primary fw-bold px-3 shadow-sm" @click="fetchLedger">
             <i class="bi bi-arrow-clockwise me-1"></i> Refresh
           </button>
@@ -52,29 +58,38 @@ const AdminMerchantLedger = {
       </div>
 
       <div v-else>
-        <!-- 4 Summary KPI Cards -->
+        <!-- 5 Summary KPI Cards (Purchases, Paid, Returns Separate, Balance, Mode Split) -->
         <div class="row g-3 mb-4">
-          <!-- Total Purchases -->
-          <div class="col-md-3">
-            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-danger">
+          <!-- 1. Total Purchases -->
+          <div class="col-lg-3 col-md-6">
+            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-danger h-100">
               <div class="text-muted small text-uppercase fw-bold">Total Purchases (Billed)</div>
               <h3 class="fw-bold text-danger mt-2 mb-1">₹{{ (ledger.TotalPurchases || 0).toFixed(2) }}</h3>
-              <div class="x-small text-muted">All GRN & Direct purchase receipts</div>
+              <div class="x-small text-muted">All GRN & Direct purchases billed</div>
             </div>
           </div>
 
-          <!-- Total Paid -->
-          <div class="col-md-3">
-            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-success">
+          <!-- 2. Total Paid -->
+          <div class="col-lg-2 col-md-6">
+            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-success h-100">
               <div class="text-muted small text-uppercase fw-bold">Total Paid (Pay Kare)</div>
               <h3 class="fw-bold text-success mt-2 mb-1">₹{{ (ledger.TotalPaid || 0).toFixed(2) }}</h3>
-              <div class="x-small text-muted">Settled via Cash, Bank & UPI</div>
+              <div class="x-small text-muted">Settled via Cash, Bank, UPI</div>
             </div>
           </div>
 
-          <!-- Balance Outstanding -->
-          <div class="col-md-3">
-            <div class="card ledger-card border-0 shadow-sm p-3 border-start border-4" :class="ledger.BalanceDue > 0 ? 'bg-danger-subtle border-danger' : 'bg-success-subtle border-success'">
+          <!-- 3. Total Returns (Alag Show Hona) -->
+          <div class="col-lg-2 col-md-6">
+            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-primary h-100">
+              <div class="text-muted small text-uppercase fw-bold text-primary">Returns (Wapas Kiya)</div>
+              <h3 class="fw-bold text-primary mt-2 mb-1">₹{{ (ledger.TotalReturns || 0).toFixed(2) }}</h3>
+              <div class="x-small text-muted">Stock returned to vendor</div>
+            </div>
+          </div>
+
+          <!-- 4. Balance Outstanding -->
+          <div class="col-lg-3 col-md-6">
+            <div class="card ledger-card border-0 shadow-sm p-3 border-start border-4 h-100" :class="ledger.BalanceDue > 0 ? 'bg-danger-subtle border-danger' : 'bg-success-subtle border-success'">
               <div class="text-muted small text-uppercase fw-bold">Outstanding Balance (Baqi Hai)</div>
               <h3 class="fw-bold mt-2 mb-1" :class="ledger.BalanceDue > 0 ? 'text-danger' : 'text-success'">
                 ₹{{ (ledger.BalanceDue || 0).toFixed(2) }}
@@ -85,85 +100,120 @@ const AdminMerchantLedger = {
             </div>
           </div>
 
-          <!-- Cash vs Credit Split -->
-          <div class="col-md-3">
-            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-info">
-              <div class="text-muted small text-uppercase fw-bold">Payment Mode Split</div>
+          <!-- 5. Cash vs Credit Split -->
+          <div class="col-lg-2 col-md-12">
+            <div class="card ledger-card border-0 shadow-sm bg-white p-3 border-start border-4 border-info h-100">
+              <div class="text-muted small text-uppercase fw-bold">Mode Breakdown</div>
               <div class="d-flex justify-content-between mt-2 pt-1">
-                <span class="small text-muted">Cash Paid:</span>
-                <span class="fw-bold text-success">₹{{ (ledger.TotalCashPaid || 0).toFixed(2) }}</span>
+                <span class="x-small text-muted">Cash Paid:</span>
+                <span class="fw-bold text-success small">₹{{ (ledger.TotalCashPaid || 0).toFixed(2) }}</span>
               </div>
               <div class="d-flex justify-content-between mt-1">
-                <span class="small text-muted">Credit Purchases:</span>
-                <span class="fw-bold text-dark">₹{{ (ledger.TotalCreditPurchases || 0).toFixed(2) }}</span>
+                <span class="x-small text-muted">Credit:</span>
+                <span class="fw-bold text-dark small">₹{{ (ledger.TotalCreditPurchases || 0).toFixed(2) }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Ledger Statement Table -->
+        <!-- Detailed Ledger Statement Table (With Return Column & WhatsApp Send Button) -->
         <div class="card border-0 shadow-sm overflow-hidden mb-5">
           <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-clock-history me-2 text-primary"></i> Detailed Account Statement</h5>
+            <div>
+               <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-clock-history me-2 text-primary"></i> Detailed Account Statement</h5>
+               <p class="text-muted x-small mb-0">Complete itemized record with separate Purchases, Payments, and Returns tracking.</p>
+            </div>
             <div class="badge bg-light text-dark border px-3 py-2 fw-normal">
               Showing <strong>{{ ledger.Entries ? ledger.Entries.length : 0 }}</strong> transactions
             </div>
           </div>
           <div class="table-responsive">
-            <table class="table align-middle mb-0">
+            <table class="table align-middle mb-0 table-hover">
               <thead class="bg-dark text-white small text-uppercase fw-bold">
                 <tr>
                   <th class="ps-4">Date & Time</th>
                   <th>Type</th>
                   <th>Ref #</th>
                   <th>Payment Mode</th>
-                  <th class="text-end">Debit (Purchase)</th>
-                  <th class="text-end">Credit (Paid/Return)</th>
-                  <th class="text-end">Balance Owed</th>
-                  <th class="pe-4 ps-4">Remarks</th>
+                  <th class="text-end">Purchase (Dr)</th>
+                  <th class="text-end">Payment (Cr)</th>
+                  <!-- Dedicated Return Column (Requested) -->
+                  <th class="text-end text-primary bg-primary-subtle border-start border-end">Return (Cr)</th>
+                  <th class="text-end">Balance Due</th>
+                  <th class="ps-3">Remarks / Notes</th>
+                  <!-- WhatsApp Send Invoice Button Column (Requested) -->
+                  <th class="text-end pe-4">WhatsApp Invoice</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="entry in ledger.Entries" :key="entry.LedgerID">
+                  <!-- Date & Time -->
                   <td class="ps-4">
                     <div class="fw-bold small">{{ formatDate(entry.Date) }}</div>
                     <div class="x-small text-muted">{{ formatTime(entry.Date) }}</div>
                   </td>
+
+                  <!-- Type Badge -->
                   <td>
                     <span class="badge" :class="typeBadgeClass(entry.Type)">
                       {{ (entry.Type || 'TRANSACTION').toUpperCase() }}
                     </span>
                   </td>
+
+                  <!-- Ref # -->
                   <td>
                     <span class="small fw-semibold text-secondary">
                       {{ entry.ReferenceID ? ('REF-' + entry.ReferenceID) : 'N/A' }}
                     </span>
                   </td>
+
+                  <!-- Payment Mode -->
                   <td>
                     <span class="badge bg-light text-dark border text-uppercase">
                       {{ entry.PaymentMode || 'CREDIT' }}
                     </span>
                   </td>
-                  <!-- Debit (Purchase adds to balance) -->
+
+                  <!-- 1. Purchase (Dr) -->
                   <td class="text-end fw-bold text-danger">
                     {{ (entry.Type === 'PURCHASE' || entry.Type === 'INVOICE') ? ('₹' + Number(entry.Amount || 0).toFixed(2)) : '-' }}
                   </td>
-                  <!-- Credit (Payment or Return subtracts from balance) -->
+
+                  <!-- 2. Payment (Cr) -->
                   <td class="text-end fw-bold text-success">
-                    {{ (entry.Type === 'PAYMENT' || entry.Type === 'RETURN') ? ('₹' + Number(entry.Amount || 0).toFixed(2)) : '-' }}
+                    {{ entry.Type === 'PAYMENT' ? ('₹' + Number(entry.Amount || 0).toFixed(2)) : '-' }}
                   </td>
-                  <!-- Running Balance -->
+
+                  <!-- 3. Return (Cr) Separate Column (Requested) -->
+                  <td class="text-end fw-bold text-primary bg-primary-subtle border-start border-end">
+                    <span v-if="entry.Type === 'RETURN'">
+                       <i class="bi bi-arrow-return-left me-1"></i>₹{{ Number(entry.Amount || 0).toFixed(2) }}
+                    </span>
+                    <span v-else class="text-muted">-</span>
+                  </td>
+
+                  <!-- 4. Running Balance -->
                   <td class="text-end fw-bold">
                     <span :class="(entry.Balance || 0) > 0 ? 'text-danger' : 'text-success'">
                       ₹{{ (entry.Balance || 0).toFixed(2) }}
                     </span>
                   </td>
-                  <td class="pe-4 ps-4 small text-muted">
+
+                  <!-- Remarks / Notes -->
+                  <td class="ps-3 small text-muted">
                     {{ entry.Notes || '-' }}
                   </td>
+
+                  <!-- 5. WhatsApp Send Invoice Button (Requested) -->
+                  <td class="text-end pe-4">
+                     <button class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" @click="sendWhatsAppInvoice(entry)" title="Send Invoice to Merchant on WhatsApp">
+                        <i class="bi bi-whatsapp me-1"></i> Send Invoice
+                     </button>
+                  </td>
                 </tr>
+
                 <tr v-if="!ledger.Entries || ledger.Entries.length === 0">
-                  <td colspan="8" class="text-center py-5 text-muted">
+                  <td colspan="10" class="text-center py-5 text-muted">
                     <i class="bi bi-inbox fs-2 opacity-25 d-block mb-2"></i>
                     No ledger transactions recorded yet for this merchant.
                   </td>
@@ -244,7 +294,9 @@ const AdminMerchantLedger = {
     };
   },
   mounted() {
-    this.paymentModalInstance = new bootstrap.Modal(this.$refs.paymentModal);
+    if (this.$refs.paymentModal) {
+      this.paymentModalInstance = new bootstrap.Modal(this.$refs.paymentModal);
+    }
     this.fetchLedger();
   },
   watch: {
@@ -266,6 +318,7 @@ const AdminMerchantLedger = {
           MerchantName
           GSTIN
           Contact
+          WhatsApp
           Address
           TotalPurchases
           TotalPaid
@@ -302,6 +355,123 @@ const AdminMerchantLedger = {
         this.loading = false;
       }
     },
+
+    // --- WHATSAPP INVOICE & STATEMENT DISPATCH (Requested) ---
+    sendWhatsAppInvoice(entry) {
+      if (!this.ledger) return;
+
+      const merchantName = this.ledger.MerchantName || 'Merchant';
+      let phone = this.ledger.WhatsApp || this.ledger.Contact;
+
+      let cleanPhone = phone ? String(phone).replace(/[^\d]/g, '') : '';
+      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+      if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+      if (!cleanPhone || cleanPhone.length < 10) {
+        const inputPhone = prompt(`No WhatsApp contact found for "${merchantName}".\nPlease enter 10-digit mobile number:`, '');
+        if (!inputPhone) return;
+        cleanPhone = String(inputPhone).replace(/[^\d]/g, '');
+        if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+      }
+
+      const type = (entry.Type || 'TRANSACTION').toUpperCase();
+      const amount = Number(entry.Amount || 0).toFixed(2);
+      const balance = Number(entry.Balance || this.ledger.BalanceDue || 0).toFixed(2);
+      const dateStr = this.formatDate(entry.Date);
+      const timeStr = this.formatTime(entry.Date);
+      const refNo = entry.ReferenceID ? `REF-${entry.ReferenceID}` : `VOUCHER-${entry.LedgerID}`;
+      const mode = (entry.PaymentMode || 'credit').toUpperCase();
+      const notes = entry.Notes || 'Official Ledger Transaction Entry';
+
+      let headerEmoji = '📄';
+      let typeLabel = 'TAX INVOICE / VOUCHER';
+      if (type === 'PAYMENT') {
+        headerEmoji = '💵';
+        typeLabel = 'PAYMENT RECEIPT';
+      } else if (type === 'RETURN') {
+        headerEmoji = '🔄';
+        typeLabel = 'PURCHASE RETURN CREDIT NOTE';
+      }
+
+      let message = `${headerEmoji} *${typeLabel}*\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `🏬 *Vendor / Merchant:* ${merchantName}\n`;
+      message += `🔢 *Reference #:* ${refNo}\n`;
+      message += `📅 *Date & Time:* ${dateStr} ${timeStr}\n`;
+      message += `🏷️ *Transaction Type:* ${type}\n`;
+      message += `💳 *Payment Mode:* ${mode}\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      
+      if (type === 'RETURN') {
+        message += `🔄 *Return Credit Amount:* ₹${amount}\n`;
+      } else if (type === 'PAYMENT') {
+        message += `💵 *Paid Amount Settled:* ₹${amount}\n`;
+      } else {
+        message += `📦 *Billed Purchase Amount:* ₹${amount}\n`;
+      }
+
+      message += `📋 *Description:* ${notes}\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `📊 *ACCOUNT BALANCE SUMMARY:*\n`;
+      message += `• Total Billed Purchases: ₹${Number(this.ledger.TotalPurchases || 0).toFixed(2)}\n`;
+      message += `• Total Settled Payments: ₹${Number(this.ledger.TotalPaid || 0).toFixed(2)}\n`;
+      message += `• Total Goods Returned: ₹${Number(this.ledger.TotalReturns || 0).toFixed(2)}\n`;
+      message += `👉 *OUTSTANDING BALANCE (Baqi Hai): ₹${Number(this.ledger.BalanceDue || 0).toFixed(2)}*\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `Please verify this entry in your accounts.\n`;
+      message += `Thank you for your business!`;
+
+      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
+    },
+
+    sendWhatsAppLedgerStatement() {
+      if (!this.ledger) return;
+
+      const merchantName = this.ledger.MerchantName || 'Merchant';
+      let phone = this.ledger.WhatsApp || this.ledger.Contact;
+
+      let cleanPhone = phone ? String(phone).replace(/[^\d]/g, '') : '';
+      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+      if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+      if (!cleanPhone || cleanPhone.length < 10) {
+        const inputPhone = prompt(`No WhatsApp contact found for "${merchantName}".\nPlease enter 10-digit mobile number:`, '');
+        if (!inputPhone) return;
+        cleanPhone = String(inputPhone).replace(/[^\d]/g, '');
+        if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+      }
+
+      const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const purchases = Number(this.ledger.TotalPurchases || 0).toFixed(2);
+      const paid = Number(this.ledger.TotalPaid || 0).toFixed(2);
+      const returns = Number(this.ledger.TotalReturns || 0).toFixed(2);
+      const balance = Number(this.ledger.BalanceDue || 0).toFixed(2);
+
+      let message = `📜 *ACCOUNT LEDGER STATEMENT*\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `🏬 *Merchant / Vendor:* ${merchantName}\n`;
+      message += `📅 *Statement Date:* ${today}\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `💰 *Total Purchases (Billed):* ₹${purchases}\n`;
+      message += `💵 *Total Paid (Pay Kare):* ₹${paid}\n`;
+      message += `🔄 *Total Returns (Wapas Kiya):* ₹${returns}\n`;
+      message += `👉 *OUTSTANDING BALANCE (Baqi Hai): ₹${balance}*\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `💳 *Payment Mode Split:*\n`;
+      message += `• Cash Paid: ₹${Number(this.ledger.TotalCashPaid || 0).toFixed(2)}\n`;
+      message += `• Credit Purchases: ₹${Number(this.ledger.TotalCreditPurchases || 0).toFixed(2)}\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `Total Transactions: ${this.ledger.Entries ? this.ledger.Entries.length : 0}\n`;
+      message += `Please review and settle any pending balance.\n`;
+      message += `Thank you!`;
+
+      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
+    },
+
     openPaymentModal() {
       this.paymentForm = {
         Amount: null,

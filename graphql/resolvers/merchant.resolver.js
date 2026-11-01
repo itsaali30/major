@@ -74,11 +74,23 @@ const resolvers = {
         };
       });
 
+      const mc = await prisma.merchantContacts.findFirst({
+        where: {
+          MerchantID: mid,
+          OR: [
+            { whatsapp: { not: null } },
+            { Phone: { not: null } }
+          ]
+        }
+      });
+      const whatsapp = (mc && (mc.whatsapp || mc.Phone)) || merchant.Contact || null;
+
       return {
         MerchantID: merchant.MerchantID,
         MerchantName: merchant.Name,
         GSTIN: merchant.GSTIN,
         Contact: merchant.Contact,
+        WhatsApp: whatsapp,
         Address: merchant.Address,
         TotalPurchases: totalPurchases,
         TotalPaid: totalPaid,

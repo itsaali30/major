@@ -38,6 +38,7 @@ const merchantSchema = `#graphql
     MerchantName: String
     GSTIN: String
     Contact: String
+    WhatsApp: String
     Address: String
     TotalPurchases: Float
     TotalPaid: Float
