@@ -22,6 +22,7 @@ const routes = [
   { path: '/admin/merchants/:MerchantID', component: AdminMerchantDashboard, meta: { title: 'Merchant Dashboard' } },
   { path: '/admin/merchants/:MerchantID/contacts', component: AdminMerchantContacts, meta: { title: 'Merchant Contacts' } },
   { path: '/admin/merchants/:MerchantID/purchase-orders', component: AdminPurchase, meta: { title: 'Merchant Purchase Orders' } },
+  { path: '/admin/merchants/:MerchantID/ledger', component: AdminMerchantLedger, meta: { title: 'Merchant Ledger' } },
   { path: '/admin/catalog', component: AdminCatalog, meta: { title: 'Product Catalog' } },
   { path: '/admin/inventory', component: AdminInventory, meta: { title: 'Stock Management' } },
   { path: '/admin/purchase/:section?', component: AdminPurchase, meta: { title: 'Purchase Management' } }

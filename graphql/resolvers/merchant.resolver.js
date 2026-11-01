@@ -29,6 +29,65 @@ const resolvers = {
       return await prisma.merchantContacts.findMany({
         where: { MerchantID }
       });
+    },
+    merchantLedger: async (_, { MerchantID }, { user }) => {
+      if (!user) throw new Error('Not authenticated');
+      const mid = parseInt(MerchantID);
+      const merchant = await prisma.merchants.findUnique({ where: { MerchantID: mid } });
+      if (!merchant) throw new Error('Merchant not found');
+
+      // Fetch all ledger entries
+      const entries = await prisma.merchantLedger.findMany({
+        where: { MerchantID: mid },
+        orderBy: { Date: 'asc' }
+      });
+
+      let totalPurchases = 0;
+      let totalPaid = 0;
+      let totalReturns = 0;
+      let totalCashPaid = 0;
+      let totalCreditPurchases = 0;
+      let runningBalance = 0;
+
+      const processedEntries = entries.map(e => {
+        const amt = e.Amount || 0;
+        const type = (e.Type || '').toUpperCase();
+        const mode = (e.PaymentMode || '').toLowerCase();
+
+        if (type === 'PURCHASE' || type === 'INVOICE') {
+          totalPurchases += amt;
+          runningBalance += amt;
+          if (mode === 'credit' || !mode) totalCreditPurchases += amt;
+        } else if (type === 'PAYMENT') {
+          totalPaid += amt;
+          runningBalance -= amt;
+          if (mode === 'cash') totalCashPaid += amt;
+        } else if (type === 'RETURN') {
+          totalReturns += amt;
+          runningBalance -= amt;
+        }
+
+        return {
+          ...e,
+          Date: e.Date ? e.Date.toISOString() : null,
+          Balance: runningBalance
+        };
+      });
+
+      return {
+        MerchantID: merchant.MerchantID,
+        MerchantName: merchant.Name,
+        GSTIN: merchant.GSTIN,
+        Contact: merchant.Contact,
+        Address: merchant.Address,
+        TotalPurchases: totalPurchases,
+        TotalPaid: totalPaid,
+        TotalReturns: totalReturns,
+        BalanceDue: totalPurchases - totalPaid - totalReturns,
+        TotalCashPaid: totalCashPaid,
+        TotalCreditPurchases: totalCreditPurchases,
+        Entries: processedEntries.reverse()
+      };
     }
   },
   Mutation: {
@@ -93,6 +152,27 @@ const resolvers = {
       });
 
       return true;
+    },
+    recordMerchantPayment: async (_, { MerchantID, Amount, PaymentMode, ReferenceNo, Notes }, { user }) => {
+      if (!user) throw new Error('Not authenticated');
+      const mid = parseInt(MerchantID);
+      const payAmt = parseFloat(Amount);
+      const entry = await prisma.merchantLedger.create({
+        data: {
+          MerchantID: mid,
+          Type: 'PAYMENT',
+          Amount: payAmt,
+          ReferenceID: 0,
+          PaymentMode: PaymentMode || 'cash',
+          Notes: Notes || `Payment (${ReferenceNo || PaymentMode})`,
+          Date: new Date(),
+          CreatedBy: user.UserID
+        }
+      });
+      return {
+        ...entry,
+        Date: entry.Date ? entry.Date.toISOString() : null
+      };
     }
   }
 };

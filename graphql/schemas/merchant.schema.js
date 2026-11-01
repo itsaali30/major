@@ -20,13 +20,49 @@ const merchantSchema = `#graphql
     Role: String
   }
 
+  type MerchantLedgerEntry {
+    LedgerID: Int!
+    MerchantID: Int!
+    Type: String
+    Amount: Float
+    ReferenceID: Int
+    Date: String
+    Balance: Float
+    PaymentMode: String
+    Notes: String
+    CreatedBy: Int
+  }
+
+  type MerchantLedgerSummary {
+    MerchantID: Int!
+    MerchantName: String
+    GSTIN: String
+    Contact: String
+    Address: String
+    TotalPurchases: Float
+    TotalPaid: Float
+    TotalReturns: Float
+    BalanceDue: Float
+    TotalCashPaid: Float
+    TotalCreditPurchases: Float
+    Entries: [MerchantLedgerEntry]
+  }
+
   extend type Query {
     allMerchants: [Merchant]
     merchant(MerchantID: Int!): Merchant
     merchantContacts(MerchantID: Int!): [MerchantContact]
+    merchantLedger(MerchantID: Int!): MerchantLedgerSummary
   }
 
   extend type Mutation {
+    recordMerchantPayment(
+      MerchantID: Int!,
+      Amount: Float!,
+      PaymentMode: String!,
+      ReferenceNo: String,
+      Notes: String
+    ): MerchantLedgerEntry
     createMerchant(
       Name: String!
       GSTIN: String

@@ -194,12 +194,17 @@ model MerchantContacts {
 }
 
 model PurchaseReturns {
-  ReturnID    Int     @id @default(autoincrement())
+  ReturnID    Int       @id @default(autoincrement())
+  ReturnNo    String?
   MerchantID  Int
   WarehouseID Int
   TotalAmount Float?
   Reason      String?
-  Status      String?
+  Status      String?   @default("completed")
+  CreatedBy   Int?
+  CreatedAt   DateTime? @default(now())
+
+  Items       PurchaseReturnItems[]
 }
 
 model PurchaseReturnItems {
@@ -209,6 +214,8 @@ model PurchaseReturnItems {
   Qty          Int?
   Price        Float?
   Reason       String?
+
+  Return       PurchaseReturns @relation(fields: [ReturnID], references: [ReturnID], onDelete: Cascade)
 }
 
 model MerchantLedger {
@@ -216,9 +223,45 @@ model MerchantLedger {
   MerchantID  Int
   Type        String?
   Amount      Float?
-  ReferenceID Int
-  Date        DateTime?
+  ReferenceID Int?
+  Date        DateTime? @default(now())
   Balance     Float?
+  PaymentMode String?
+  Notes       String?
+  CreatedBy   Int?
+}
+
+model GRNs {
+  GRNID          Int       @id @default(autoincrement())
+  GRNNumber      String?   @unique
+  Type           String    @default("PO")
+  POID           Int?
+  MerchantID     Int
+  WarehouseID    Int
+  StoreID        Int?
+  ShelfID        Int?
+  TotalAmount    Float?    @default(0)
+  ReceivedByID   Int?
+  ReceivedByName String?
+  ReceivedAt     DateTime  @default(now())
+  Remarks        String?
+  Status         String?   @default("completed")
+  CreatedAt      DateTime  @default(now())
+
+  Items          GRNItems[]
+}
+
+model GRNItems {
+  GRNItemID   Int      @id @default(autoincrement())
+  GRNID       Int
+  VariantID   Int
+  VariantName String?
+  Qty         Int
+  Cost        Float?   @default(0)
+  Subtotal    Float?   @default(0)
+  UOM         String?
+
+  GRN         GRNs     @relation(fields: [GRNID], references: [GRNID], onDelete: Cascade)
 }
 
 model Categories {
@@ -725,15 +768,18 @@ model PurchaseOrderItems {
 
 model PurchaseInvoices {
   InvoiceID         Int       @id @default(autoincrement())
-  POID              Int
+  POID              Int?
   InvoiceNo         String?   @unique
   MerchantInvoiceNo String?
+  MerchantID        Int?
   Amount            Float?
   Tax               Float?
   Date              DateTime? @default(now())
   Status            String?   @default("unpaid") // unpaid, paid, cancelled
+  PaymentMode       String?   // cash, credit, bank, upi
+  PaidAmount        Float?    @default(0)
   CreatedBy         Int?
   CreatedAt         DateTime  @default(now())
 
-  PurchaseOrder     PurchaseOrders @relation(fields: [POID], references: [POID], onDelete: Cascade)
+  PurchaseOrder     PurchaseOrders? @relation(fields: [POID], references: [POID], onDelete: Cascade)
 }
