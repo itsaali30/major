@@ -228,6 +228,7 @@ const AdminPurchase = {
                  <th>PO Ref</th>
                  <th>Merchant</th>
                  <th>Warehouse Destination</th>
+                  <th>Payment Mode</th>
                  <th>Received By (Officer)</th>
                  <th>Received At</th>
                  <th>Total Amount</th>
@@ -267,6 +268,12 @@ const AdminPurchase = {
                     </div>
                  </td>
                  <td>
+                    <span class="badge px-2 py-1 fw-bold text-uppercase" :class="(g.PaymentMode || 'credit') === 'cash' ? 'bg-success text-white' : 'bg-secondary text-white'">
+                       <i class="bi me-1" :class="(g.PaymentMode || 'credit') === 'cash' ? 'bi-cash-stack' : 'bi-credit-card'"></i>
+                       {{ g.PaymentMode || 'credit' }}
+                    </span>
+                 </td>
+                 <td>
                     <div class="small fw-bold text-dark">
                        <i class="bi bi-person-badge text-secondary me-1"></i> {{ g.ReceivedByName || 'Officer' }}
                     </div>
@@ -277,13 +284,18 @@ const AdminPurchase = {
                  </td>
                  <td class="fw-bold text-success">₹{{ (g.TotalAmount || 0).toFixed(2) }}</td>
                  <td class="text-end pe-4">
-                    <button class="btn btn-sm btn-outline-info fw-bold px-3 shadow-sm" @click="viewGRNDetails(g)">
-                       <i class="bi bi-eye me-1"></i> View Items ({{ (g.Items || []).length }})
-                    </button>
+                    <div class="btn-group btn-group-sm">
+                       <button class="btn btn-outline-info fw-bold shadow-sm" @click="viewGRNDetails(g)">
+                          <i class="bi bi-eye me-1"></i> View ({{ (g.Items || []).length }})
+                       </button>
+                       <button class="btn btn-outline-secondary fw-bold shadow-sm" @click="openEditGRN(g)">
+                          <i class="bi bi-pencil-square me-1"></i> Edit
+                       </button>
+                    </div>
                  </td>
                </tr>
                <tr v-if="filteredGRNs.length === 0">
-                 <td colspan="9" class="text-center py-5 text-muted">
+                 <td colspan="10" class="text-center py-5 text-muted">
                     <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
                     No Goods Received Notes found. Click <strong>"New GRN Receipt"</strong> to receive stock.
                  </td>
@@ -602,19 +614,26 @@ const AdminPurchase = {
 
                <!-- Officer & Receiver Tracking Box -->
                <div class="card border-0 bg-light p-3 mb-3">
-                  <div class="fw-bold small text-dark mb-2"><i class="bi bi-person-badge-fill me-1 text-primary"></i> Receiving Officer Details</div>
+                  <div class="fw-bold small text-dark mb-2"><i class="bi bi-person-badge-fill me-1 text-primary"></i> Receiving Officer & Payment Details</div>
                   <div class="row g-2">
-                     <div class="col-md-4">
+                     <div class="col-md-3">
                         <label class="form-label x-small text-muted fw-bold mb-1">Employee / User ID <span class="text-danger">*</span></label>
                         <input type="number" class="form-control form-control-sm" v-model.number="grnForm.ReceivedByID" placeholder="e.g. 101" required>
                      </div>
-                     <div class="col-md-4">
+                     <div class="col-md-3">
                         <label class="form-label x-small text-muted fw-bold mb-1">Receiver Officer Name <span class="text-danger">*</span></label>
                         <input type="text" class="form-control form-control-sm" v-model="grnForm.ReceivedByName" placeholder="Officer Full Name" required>
                      </div>
-                     <div class="col-md-4">
+                     <div class="col-md-3">
                         <label class="form-label x-small text-muted fw-bold mb-1">Received Date & Time</label>
                         <input type="datetime-local" class="form-control form-control-sm" v-model="grnForm.ReceivedAt">
+                     </div>
+                     <div class="col-md-3">
+                        <label class="form-label x-small text-muted fw-bold mb-1">Payment Mode <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm fw-bold border-primary" v-model="grnForm.PaymentMode" required>
+                           <option value="credit">CREDIT (Payable Later)</option>
+                           <option value="cash">CASH (Paid on Receipt)</option>
+                        </select>
                      </div>
                   </div>
                </div>
@@ -805,6 +824,14 @@ const AdminPurchase = {
                      <div class="fw-bold mt-1 text-primary">{{ selectedGRN.ReceivedByName || 'Officer' }}</div>
                      <div class="x-small text-muted">ID: {{ selectedGRN.ReceivedByID || 'N/A' }}</div>
                      <div class="x-small text-muted">{{ formatDateTime(selectedGRN.ReceivedAt || selectedGRN.CreatedAt) }}</div>
+                  </div>
+                  <div class="col-md-3">
+                     <div class="text-muted x-small text-uppercase fw-bold">Payment Mode</div>
+                     <div class="mt-1">
+                        <span class="badge fs-7 px-3 py-1" :class="(selectedGRN.PaymentMode || 'credit') === 'cash' ? 'bg-success text-white' : 'bg-secondary text-white'">
+                           {{ (selectedGRN.PaymentMode || 'credit').toUpperCase() }}
+                        </span>
+                     </div>
                   </div>
                </div>
 
@@ -1029,7 +1056,65 @@ const AdminPurchase = {
         </div>
       </div>
 
-      <!-- MODAL 6: Invoice Payment Settlement Modal -->
+            <!-- MODAL 7: Edit GRN Modal -->
+      <div class="modal fade" id="editGRNModal" tabindex="-1" ref="editGRNModal">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border-0 shadow" v-if="editingGRN">
+            <div class="modal-header bg-dark text-white">
+              <h5 class="modal-title fw-bold">
+                 <i class="bi bi-pencil-square me-2 text-warning"></i> Edit GRN (#{{ editingGRN.GRNNumber || editingGRN.GRNID }})
+              </h5>
+              <button type="button" class="btn-close btn-close-white" @click="closeEditGRNModal()"></button>
+            </div>
+            <div class="modal-body p-4">
+               <div class="card bg-light border-0 p-3 mb-3">
+                  <div class="d-flex justify-content-between mb-1">
+                     <span class="text-muted small">Merchant:</span>
+                     <span class="fw-bold">{{ editingGRN.MerchantName }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between mb-1">
+                     <span class="text-muted small">Warehouse:</span>
+                     <span class="fw-bold">{{ editingGRN.WarehouseName }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between mb-1">
+                     <span class="text-muted small">Total Value:</span>
+                     <span class="fw-bold text-success">₹{{ (editingGRN.TotalAmount || 0).toFixed(2) }}</span>
+                  </div>
+                  <div class="d-flex justify-content-between">
+                     <span class="text-muted small">Received By:</span>
+                     <span class="fw-bold">{{ editingGRN.ReceivedByName || 'Officer' }} (ID: {{ editingGRN.ReceivedByID || 'N/A' }})</span>
+                  </div>
+               </div>
+
+               <div class="mb-3">
+                  <label class="form-label small fw-bold">Payment Mode <span class="text-danger">*</span></label>
+                  <select class="form-select fw-bold border-primary" v-model="editGRNForm.PaymentMode" required>
+                     <option value="credit">CREDIT (Payable Later / Balance Due)</option>
+                     <option value="cash">CASH (Paid Immediately on Delivery)</option>
+                  </select>
+                  <div class="form-text text-muted x-small">
+                     Selecting <strong>CASH</strong> marks direct invoice as settled and posts matching payment to Merchant Ledger.
+                  </div>
+               </div>
+
+               <div class="mb-3">
+                  <label class="form-label small fw-bold">Remarks / Notes</label>
+                  <textarea class="form-control" rows="3" v-model="editGRNForm.Remarks" placeholder="Update remarks or reason for change..."></textarea>
+               </div>
+
+               <div class="d-flex justify-content-end gap-2 mt-4">
+                  <button type="button" class="btn btn-outline-secondary" @click="closeEditGRNModal()">Cancel</button>
+                  <button type="button" class="btn btn-primary fw-bold px-4" :disabled="savingEditGRN" @click="submitEditGRN()">
+                     <span v-if="savingEditGRN" class="spinner-border spinner-border-sm me-1"></span>
+                     <i class="bi bi-check2-circle me-1"></i> Update GRN
+                  </button>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+<!-- MODAL 6: Invoice Payment Settlement Modal -->
       <div class="modal fade" id="paymentModal" tabindex="-1" ref="paymentModal">
         <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content border-0 shadow" v-if="selectedInvoiceForPayment">
@@ -1154,8 +1239,18 @@ const AdminPurchase = {
         ReceivedByID: null,
         ReceivedByName: '',
         ReceivedAt: '',
+        PaymentMode: 'credit',
         Remarks: '',
         Items: []
+      },
+      // Edit GRN Form
+      editingGRN: null,
+      editGRNModalInstance: null,
+      savingEditGRN: false,
+      editGRNForm: {
+        GRNID: null,
+        PaymentMode: 'credit',
+        Remarks: ''
       },
       selectedPOForGRN: null,
       grnProductSearch: '',
@@ -1305,6 +1400,7 @@ const AdminPurchase = {
     if (this.$refs.returnModal) this.returnModalInstance = new bootstrap.Modal(this.$refs.returnModal);
     if (this.$refs.returnDetailsModal) this.returnDetailsModalInstance = new bootstrap.Modal(this.$refs.returnDetailsModal);
     if (this.$refs.paymentModal) this.paymentModalInstance = new bootstrap.Modal(this.$refs.paymentModal);
+    if (this.$refs.editGRNModal) this.editGRNModalInstance = new bootstrap.Modal(this.$refs.editGRNModal);
 
     // 2. Set active tab from route
     const sec = this.$route?.params?.section;
@@ -1402,7 +1498,7 @@ const AdminPurchase = {
         const grnQuery = `query {
           allGRNs {
             GRNID GRNNumber Type POID MerchantID WarehouseID StoreID ShelfID
-            TotalAmount ReceivedByID ReceivedByName ReceivedAt Remarks Status CreatedAt
+            TotalAmount PaymentMode ReceivedByID ReceivedByName ReceivedAt Remarks Status CreatedAt
             WarehouseName MerchantName StoreName ShelfCode PONumber
             Items { GRNItemID GRNID VariantID VariantName Qty Cost Subtotal UOM }
           }
@@ -1713,6 +1809,7 @@ const AdminPurchase = {
         ReceivedByID: officerId,
         ReceivedByName: officerName,
         ReceivedAt: nowStr,
+        PaymentMode: 'credit',
         Remarks: '',
         Items: []
       };
@@ -1802,13 +1899,14 @@ const AdminPurchase = {
             this.savingGRN = false;
             return;
           }
-          const m = `mutation($poid: Int!, $empid: Int, $empname: String, $time: String, $rem: String, $items: [GRNItemInput]) {
+          const m = `mutation($poid: Int!, $empid: Int, $empname: String, $time: String, $rem: String, $paymentMode: String, $items: [GRNItemInput]) {
             createGRNAgainstPO(
               POID: $poid,
               ReceivedByID: $empid,
               ReceivedByName: $empname,
               ReceivedAt: $time,
               Remarks: $rem,
+              PaymentMode: $paymentMode,
               Items: $items
             ) { GRNID GRNNumber }
           }`;
@@ -1825,6 +1923,7 @@ const AdminPurchase = {
             empname: f.ReceivedByName,
             time: f.ReceivedAt ? new Date(f.ReceivedAt).toISOString() : new Date().toISOString(),
             rem: f.Remarks,
+            paymentMode: f.PaymentMode || 'credit',
             items: itemsPayload
           }, token);
 
@@ -1841,7 +1940,7 @@ const AdminPurchase = {
             this.savingGRN = false;
             return;
           }
-          const m = `mutation($mid: Int!, $wid: Int!, $empid: Int, $empname: String, $time: String, $rem: String, $items: [GRNItemInput!]!) {
+          const m = `mutation($mid: Int!, $wid: Int!, $empid: Int, $empname: String, $time: String, $rem: String, $paymentMode: String, $items: [GRNItemInput!]!) {
             createDirectGRN(
               MerchantID: $mid,
               WarehouseID: $wid,
@@ -1849,6 +1948,7 @@ const AdminPurchase = {
               ReceivedByName: $empname,
               ReceivedAt: $time,
               Remarks: $rem,
+              PaymentMode: $paymentMode,
               Items: $items
             ) { GRNID GRNNumber }
           }`;
@@ -1866,6 +1966,7 @@ const AdminPurchase = {
             empname: f.ReceivedByName,
             time: f.ReceivedAt ? new Date(f.ReceivedAt).toISOString() : new Date().toISOString(),
             rem: f.Remarks,
+            paymentMode: f.PaymentMode || 'credit',
             items: itemsPayload
           }, token);
 
@@ -1881,6 +1982,48 @@ const AdminPurchase = {
         alert("Error creating GRN: " + msg);
       } finally {
         this.savingGRN = false;
+      }
+    },
+    // --- EDIT GRN METHODS ---
+    openEditGRN(g) {
+      this.editingGRN = g;
+      this.editGRNForm = {
+        GRNID: g.GRNID,
+        PaymentMode: g.PaymentMode || 'credit',
+        Remarks: g.Remarks || ''
+      };
+      if (this.editGRNModalInstance) this.editGRNModalInstance.show();
+    },
+    closeEditGRNModal() {
+      if (this.editGRNModalInstance) this.editGRNModalInstance.hide();
+    },
+    async submitEditGRN() {
+      if (!this.editGRNForm.GRNID) return;
+      this.savingEditGRN = true;
+      try {
+        const token = localStorage.getItem('token');
+        const m = `mutation($id: Int!, $mode: String, $rem: String) {
+          updateGRN(GRNID: $id, PaymentMode: $mode, Remarks: $rem) {
+            GRNID
+            PaymentMode
+            Remarks
+          }
+        }`;
+        await graphqlRequest(m, {
+          id: this.editGRNForm.GRNID,
+          mode: this.editGRNForm.PaymentMode,
+          rem: this.editGRNForm.Remarks
+        }, token);
+
+        alert("GRN payment mode updated successfully!");
+        this.closeEditGRNModal();
+        await this.refreshData();
+      } catch (e) {
+        console.error("Update GRN error:", e);
+        const msg = e.response?.errors?.[0]?.message || e.message;
+        alert("Failed to update GRN: " + msg);
+      } finally {
+        this.savingEditGRN = false;
       }
     },
     viewGRNDetails(g) {

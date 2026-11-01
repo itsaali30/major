@@ -298,7 +298,7 @@ const purchaseResolvers = {
       return true;
     },
 
-    createGRNAgainstPO: async (_, { POID, ReceivedByID, ReceivedByName, ReceivedAt, Items, Remarks }, { user }) => {
+    createGRNAgainstPO: async (_, { POID, ReceivedByID, ReceivedByName, ReceivedAt, PaymentMode, Items, Remarks }, { user }) => {
       if (!user) throw new Error('Not authenticated');
       const po = await prisma.purchaseOrders.findUnique({
         where: { POID: parseInt(POID) },
@@ -314,6 +314,7 @@ const purchaseResolvers = {
         if (!isNaN(d.getTime())) receivedDate = d;
       }
       const receivedAt = receivedDate;
+      const payMode = (PaymentMode || 'credit').toLowerCase();
 
       const { store, shelf } = await getOrCreateFloorStoreAndShelf(po.WarehouseID);
 
@@ -370,6 +371,7 @@ const purchaseResolvers = {
           ReceivedByID: receiverId,
           ReceivedByName: receiverName,
           ReceivedAt: receivedAt,
+          PaymentMode: payMode,
           Remarks: Remarks || `Received against PO-${String(po.POID).padStart(5, '0')}`,
           Status: 'completed',
           Items: { create: grnItemsData }
@@ -391,16 +393,32 @@ const purchaseResolvers = {
           Amount: totalAmount || po.TotalAmount || 0,
           ReferenceID: grn.GRNID,
           Date: receivedAt,
-          PaymentMode: 'credit',
-          Notes: `GRN ${grnNumber} against PO-${String(po.POID).padStart(5, '0')}`,
+          PaymentMode: payMode,
+          Notes: `GRN ${grnNumber} against PO-${String(po.POID).padStart(5, '0')} (${payMode.toUpperCase()})`,
           CreatedBy: receiverId
         }
       });
 
+      // If Cash selected, also record immediate cash payment entry in ledger
+      if (payMode === 'cash') {
+        await prisma.merchantLedger.create({
+          data: {
+            MerchantID: po.MerchantID,
+            Type: 'PAYMENT',
+            Amount: totalAmount || po.TotalAmount || 0,
+            ReferenceID: grn.GRNID,
+            Date: receivedAt,
+            PaymentMode: 'cash',
+            Notes: `Cash settlement on receipt for GRN ${grnNumber}`,
+            CreatedBy: receiverId
+          }
+        });
+      }
+
       return grn;
     },
 
-    createDirectGRN: async (_, { MerchantID, WarehouseID, ReceivedByID, ReceivedByName, ReceivedAt, Items, Remarks }, { user }) => {
+    createDirectGRN: async (_, { MerchantID, WarehouseID, ReceivedByID, ReceivedByName, ReceivedAt, PaymentMode, Items, Remarks }, { user }) => {
       if (!user) throw new Error('Not authenticated');
       if (!MerchantID || !WarehouseID) throw new Error('Merchant and Warehouse are required');
       if (!Items || Items.length === 0) throw new Error('At least one item is required');
@@ -413,6 +431,7 @@ const purchaseResolvers = {
         if (!isNaN(d.getTime())) receivedDate = d;
       }
       const receivedAt = receivedDate;
+      const payMode = (PaymentMode || 'credit').toLowerCase();
 
       const { store, shelf } = await getOrCreateFloorStoreAndShelf(WarehouseID);
 
@@ -467,6 +486,7 @@ const purchaseResolvers = {
           ReceivedByID: receiverId,
           ReceivedByName: receiverName,
           ReceivedAt: receivedAt,
+          PaymentMode: payMode,
           Remarks: Remarks || 'Direct Vendor Purchase',
           Status: 'completed',
           Items: { create: grnItemsData }
@@ -482,11 +502,27 @@ const purchaseResolvers = {
           Amount: totalAmount,
           ReferenceID: grn.GRNID,
           Date: receivedAt,
-          PaymentMode: 'credit',
-          Notes: `Direct Purchase GRN ${grnNumber}`,
+          PaymentMode: payMode,
+          Notes: `Direct Purchase GRN ${grnNumber} (${payMode.toUpperCase()})`,
           CreatedBy: receiverId
         }
       });
+
+      // If Cash selected, also record immediate cash payment entry in ledger
+      if (payMode === 'cash') {
+        await prisma.merchantLedger.create({
+          data: {
+            MerchantID: parseInt(MerchantID),
+            Type: 'PAYMENT',
+            Amount: totalAmount,
+            ReferenceID: grn.GRNID,
+            Date: receivedAt,
+            PaymentMode: 'cash',
+            Notes: `Cash settlement on receipt for Direct GRN ${grnNumber}`,
+            CreatedBy: receiverId
+          }
+        });
+      }
 
       // Also create a direct purchase invoice
       await prisma.purchaseInvoices.create({
@@ -496,14 +532,59 @@ const purchaseResolvers = {
           InvoiceNo: `INV-${grnNumber}`,
           MerchantInvoiceNo: `BILL-${grnNumber}`,
           Amount: totalAmount,
-          Status: 'unpaid',
-          PaymentMode: 'credit',
+          Status: payMode === 'cash' ? 'paid' : 'unpaid',
+          PaidAmount: payMode === 'cash' ? totalAmount : 0,
+          PaymentMode: payMode,
           Date: receivedAt,
           CreatedBy: receiverId
         }
       });
 
       return grn;
+    },
+
+    updateGRN: async (_, { GRNID, PaymentMode, Remarks }, { user }) => {
+      if (!user) throw new Error('Not authenticated');
+      const grn = await prisma.gRNs.findUnique({ where: { GRNID: parseInt(GRNID) } });
+      if (!grn) throw new Error('GRN not found');
+
+      const data = {};
+      if (Remarks !== undefined) data.Remarks = Remarks;
+      if (PaymentMode) {
+        const newMode = PaymentMode.toLowerCase();
+        data.PaymentMode = newMode;
+        // Update merchant ledger purchase entry payment mode
+        await prisma.merchantLedger.updateMany({
+          where: { ReferenceID: grn.GRNID, Type: 'PURCHASE' },
+          data: { PaymentMode: newMode }
+        });
+        // If changing to cash, ensure a payment entry exists
+        if (newMode === 'cash') {
+          const existingPay = await prisma.merchantLedger.findFirst({
+            where: { ReferenceID: grn.GRNID, Type: 'PAYMENT' }
+          });
+          if (!existingPay) {
+            await prisma.merchantLedger.create({
+              data: {
+                MerchantID: grn.MerchantID,
+                Type: 'PAYMENT',
+                Amount: grn.TotalAmount || 0,
+                ReferenceID: grn.GRNID,
+                Date: new Date(),
+                PaymentMode: 'cash',
+                Notes: `Cash settlement for GRN ${grn.GRNNumber || grn.GRNID}`,
+                CreatedBy: user.UserID
+              }
+            });
+          }
+        }
+      }
+
+      return await prisma.gRNs.update({
+        where: { GRNID: parseInt(GRNID) },
+        data,
+        include: { Items: true }
+      });
     },
 
     createPurchaseReturn: async (_, { MerchantID, WarehouseID, Reason, Items }, { user }) => {

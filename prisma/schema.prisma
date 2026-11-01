@@ -245,6 +245,7 @@ model GRNs {
   ReceivedByName String?
   ReceivedAt     DateTime  @default(now())
   Remarks        String?
+  PaymentMode    String?   @default("credit")
   Status         String?   @default("completed")
   CreatedAt      DateTime  @default(now())
 

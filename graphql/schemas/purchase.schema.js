@@ -53,6 +53,7 @@ const purchaseSchema = `#graphql
     ReceivedByName: String
     ReceivedAt: String
     Remarks: String
+    PaymentMode: String
     Status: String
     CreatedAt: String
     Items: [GRNItem]
@@ -152,6 +153,7 @@ const purchaseSchema = `#graphql
       ReceivedByID: Int,
       ReceivedByName: String,
       ReceivedAt: String,
+      PaymentMode: String,
       Items: [GRNItemInput],
       Remarks: String
     ): GRN
@@ -162,7 +164,14 @@ const purchaseSchema = `#graphql
       ReceivedByID: Int,
       ReceivedByName: String,
       ReceivedAt: String,
+      PaymentMode: String,
       Items: [GRNItemInput!]!,
+      Remarks: String
+    ): GRN
+
+    updateGRN(
+      GRNID: Int!,
+      PaymentMode: String,
       Remarks: String
     ): GRN
 
