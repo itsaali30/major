@@ -25,9 +25,35 @@ const resolvers = {
       if (!user) throw new Error('Not authenticated');
       if (user.Role !== 'superadmin' && user.Role !== 'admin') throw new Error('Not authorized - Managers cannot create warehouses');
       
-      return await prisma.warehouses.create({
+      const warehouse = await prisma.warehouses.create({
         data: args
       });
+
+      // Every warehouse automatically gets a "Floor" store and a "FL01" shelf
+      try {
+        const floorStore = await prisma.stores.create({
+          data: {
+            WarehouseID: warehouse.WarehouseID,
+            StoreName: 'Floor',
+            Type: 'Floor',
+            Status: 'Active',
+            Address: warehouse.Address || ''
+          }
+        });
+
+        await prisma.shelves.create({
+          data: {
+            StoreID: floorStore.StoreID,
+            ShelfCode: 'FL01',
+            Level: 1,
+            Position: 1
+          }
+        });
+      } catch (err) {
+        console.error('Failed to auto-create Floor store and FL01 shelf:', err);
+      }
+
+      return warehouse;
     },
     updateWarehouse: async (_, args, { user }) => {
       if (!user) throw new Error('Not authenticated');

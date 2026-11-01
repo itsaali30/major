@@ -29,6 +29,29 @@ const prisma = new PrismaClient();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Stream files from MinIO via Express so they work across ngrok, localhost, and docker
+const streamMinioFile = async (bucket, fileName, res) => {
+  try {
+    const stat = await minioClient.statObject(bucket, fileName);
+    if (stat.metaData && stat.metaData['content-type']) {
+      res.setHeader('Content-Type', stat.metaData['content-type']);
+    }
+    const stream = await minioClient.getObject(bucket, fileName);
+    stream.on('error', () => res.status(404).json({ error: 'File not found' }));
+    stream.pipe(res);
+  } catch (err) {
+    res.status(404).json({ error: 'File not found' });
+  }
+};
+
+app.get('/storage/:bucket/:fileName', (req, res) => {
+  streamMinioFile(req.params.bucket, req.params.fileName, res);
+});
+
+app.get('/:bucket(user-image|bank-images|user-documents|product-images)/:fileName', (req, res) => {
+  streamMinioFile(req.params.bucket, req.params.fileName, res);
+});
+
 app.post('/upload-profile-image', upload.single('image'), async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -47,7 +70,7 @@ app.post('/upload-profile-image', upload.single('image'), async (req, res) => {
 
     const protocol = req.protocol;
     const host = req.get('host');
-    const minioUrl = `${process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http'}://${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || 9000}/${bucketName}/${fileName}`;
+    const minioUrl = `/storage/${bucketName}/${fileName}`;
     console.log(`📸 Image uploaded and accessible at: ${minioUrl}`);
 
     await prisma.users.update({
@@ -82,7 +105,7 @@ app.post('/upload-bank-image', upload.single('image'), async (req, res) => {
       'Content-Type': req.file.mimetype
     });
 
-    const minioUrl = `${process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http'}://${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || 9000}/${bankBucketName}/${fileName}`;
+    const minioUrl = `/storage/${bankBucketName}/${fileName}`;
     console.log(`📸 Bank proof uploaded: ${minioUrl}`);
 
     res.json({ success: true, imageUrl: minioUrl });
@@ -108,7 +131,7 @@ app.post('/upload-doc-image', upload.single('image'), async (req, res) => {
       'Content-Type': req.file.mimetype
     });
 
-    const minioUrl = `${process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http'}://${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || 9000}/${docBucketName}/${fileName}`;
+    const minioUrl = `/storage/${docBucketName}/${fileName}`;
     console.log(`📸 Document uploaded: ${minioUrl}`);
 
     res.json({ success: true, imageUrl: minioUrl });
@@ -134,7 +157,7 @@ app.post('/upload-catalog-image', upload.single('image'), async (req, res) => {
       'Content-Type': req.file.mimetype
     });
 
-    const minioUrl = `${process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http'}://${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || 9000}/${productBucketName}/${fileName}`;
+    const minioUrl = `/storage/${productBucketName}/${fileName}`;
     console.log(`📸 Catalog image uploaded: ${minioUrl}`);
 
     res.json({ success: true, imageUrl: minioUrl });

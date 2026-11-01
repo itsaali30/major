@@ -15,6 +15,8 @@ const purchaseSchema = `#graphql
     # Virtual Fields
     WarehouseName: String
     MerchantName: String
+    MerchantContact: String
+    MerchantWhatsApp: String
   }
 
   type PurchaseOrderItem {
@@ -33,7 +35,7 @@ const purchaseSchema = `#graphql
     ItemID: Int
     VariantID: Int!
     Qty: Int!
-    Cost: Float!
+    Cost: Float
     UOM: String
   }
 

@@ -127,7 +127,7 @@ const AdminCatalog = {
                     </td>
                     <td colspan="5">
                        <div class="d-flex flex-wrap align-items-center gap-3 py-1">
-                          <img :src="group.product.ImageURL || 'https://placehold.co/40x40?text=P'" class="rounded border shadow-sm" style="width: 44px; height: 44px; object-fit: cover;">
+                          <img :src="formatImg(group.product.ImageURL, 'https://placehold.co/40x40?text=P')" onerror="this.src='https://placehold.co/40x40?text=P'" class="rounded border shadow-sm" style="width: 44px; height: 44px; object-fit: cover;">
                           <div>
                              <div class="fw-bold text-dark fs-6">
                                 {{ group.product.ProductName }}
@@ -179,7 +179,7 @@ const AdminCatalog = {
                     </td>
                     <td>
                        <div class="d-flex align-items-center ps-3">
-                          <img :src="v.ImageURL || group.product.ImageURL || 'https://placehold.co/40x40?text=V'" class="rounded-circle border me-3" style="width: 32px; height: 32px; object-fit: cover;" onerror="this.src='https://placehold.co/40x40?text=V'">
+                          <img :src="formatImg(v.ImageURL || group.product.ImageURL, 'https://placehold.co/40x40?text=V')" class="rounded-circle border me-3" style="width: 32px; height: 32px; object-fit: cover;" onerror="this.src='https://placehold.co/40x40?text=V'">
                           <div>
                              <div class="small fw-bold">{{ group.product.ProductName }} - {{ v.Size || v.Color || 'Default' }}</div>
                              <div class="x-small text-muted" v-if="v.Unit">Unit: {{ v.Unit }}</div>
@@ -246,7 +246,7 @@ const AdminCatalog = {
               <div class="card h-100 border-0 shadow-sm rounded-3 overflow-hidden">
                  <div class="card-header bg-light d-flex align-items-center justify-content-between py-3">
                     <div class="d-flex align-items-center gap-2">
-                       <img :src="c.CategoryImageURL || 'https://placehold.co/40x40?text=C'" class="rounded border" style="width: 36px; height: 36px; object-fit: cover;">
+                       <img :src="formatImg(c.CategoryImageURL, 'https://placehold.co/40x40?text=C')" onerror="this.src='https://placehold.co/40x40?text=C'" class="rounded border" style="width: 36px; height: 36px; object-fit: cover;">
                        <div>
                           <div class="fw-bold text-dark">{{ c.CategoryName }}</div>
                           <div class="x-small text-muted">ID: #{{ c.CategoryID }} • {{ (c.subCategories || []).length }} Subcategories</div>
@@ -267,7 +267,7 @@ const AdminCatalog = {
                     <ul class="list-group list-group-flush small" v-if="(c.subCategories || []).length > 0">
                        <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2" v-for="sc in c.subCategories" :key="sc.SubCategoryID">
                           <div class="d-flex align-items-center gap-2">
-                             <img :src="sc.SubCategoryImageURL || 'https://placehold.co/24x24?text=S'" class="rounded" style="width: 24px; height: 24px; object-fit: cover;">
+                             <img :src="formatImg(sc.SubCategoryImageURL, 'https://placehold.co/24x24?text=S')" onerror="this.src='https://placehold.co/24x24?text=S'" class="rounded" style="width: 24px; height: 24px; object-fit: cover;">
                              <span>{{ sc.CategorySubName }}</span>
                           </div>
                           <div class="btn-group btn-group-sm">
@@ -296,7 +296,7 @@ const AdminCatalog = {
            <div class="col-md-4 col-lg-3" v-for="b in brands" :key="b.BrandID">
               <div class="card h-100 border-0 shadow-sm rounded-3 p-3 text-center">
                  <div class="d-flex justify-content-center mb-3">
-                    <img :src="b.LogoURL || 'https://placehold.co/70x70?text=BRAND'" class="rounded-circle border shadow-sm" style="width: 70px; height: 70px; object-fit: cover;">
+                    <img :src="formatImg(b.LogoURL, 'https://placehold.co/70x70?text=BRAND')" onerror="this.src='https://placehold.co/70x70?text=BRAND'" class="rounded-circle border shadow-sm" style="width: 70px; height: 70px; object-fit: cover;">
                  </div>
                  <h6 class="fw-bold text-dark mb-1">{{ b.BrandName }}</h6>
                  <div class="x-small text-muted mb-2">ID: #{{ b.BrandID }} • {{ getProductsCountForBrand(b.BrandID) }} Products</div>
@@ -484,7 +484,7 @@ const AdminCatalog = {
                      </div>
                      <div class="col-12 p-3 bg-light rounded-3 d-flex align-items-center gap-4">
                         <div class="border shadow-sm rounded-3 overflow-hidden bg-white" style="width: 70px; height: 70px;">
-                           <img :src="formData.ImageURL || 'https://placehold.co/70x70?text=IMG'" class="w-100 h-100 object-fit-cover">
+                           <img :src="formatImg(formData.ImageURL, 'https://placehold.co/70x70?text=IMG')" onerror="this.src='https://placehold.co/70x70?text=IMG'" class="w-100 h-100 object-fit-cover">
                         </div>
                         <div class="flex-grow-1">
                            <label class="form-label fw-bold small mb-1">Variant Specific Photo</label>
@@ -779,17 +779,59 @@ const AdminCatalog = {
     },
 
     // Modal & CRUD Operations
+    formatImg(url, fallback = 'https://placehold.co/40x40?text=IMG') {
+       if (!url) return fallback;
+       if (url.includes('localhost:9000/')) {
+          return url.replace(/http:\/\/localhost:9000\//g, '/storage/');
+       }
+       return url;
+    },
     openModal(type, item) {
        this.modalType = type; 
-       this.isEditing = !!item && (item.ProductID || item.CategoryID || item.SubCategoryID || item.BrandID || item.VariantID);
+       if (type === 'variant') {
+          this.isEditing = !!item && !!item.VariantID;
+       } else if (type === 'product') {
+          this.isEditing = !!item && !!item.ProductID && item.ShelfID === undefined;
+       } else if (type === 'category') {
+          this.isEditing = !!item && !!item.CategoryID && !item.SubCategoryID;
+       } else if (type === 'subcategory') {
+          this.isEditing = !!item && !!item.SubCategoryID;
+       } else if (type === 'brand') {
+          this.isEditing = !!item && !!item.BrandID && !item.ProductID;
+       } else {
+          this.isEditing = false;
+       }
+
        this.modalProductSearch = '';
        this.modalBrandSearch = '';
        this.modalCategorySearch = '';
 
        if (item) {
           this.formData = { ...item };
+          if (type === 'variant' && !this.isEditing) {
+             this.formData = {
+                ProductID: item.ProductID,
+                IsActive: true,
+                Status: 'Active',
+                ShelfID: item.ShelfID || 1,
+                SKU: '',
+                MRP: '',
+                SalePrice: '',
+                Unit: 'PACK',
+                Size: '',
+                Color: '',
+                Weight: null,
+                ImageURL: ''
+             };
+          } else if (type === 'subcategory' && !this.isEditing) {
+             this.formData = {
+                CategoryID: item.CategoryID,
+                CategorySubName: '',
+                SubCategoryImageURL: '',
+                Status: 'Active'
+             };
+          }
        } else {
-          // Pre-populate sensible defaults so selects are never blank
           this.formData = { 
              IsActive: true, 
              Status: 'Active', 
@@ -887,8 +929,13 @@ const AdminCatalog = {
              if (!entityName || !entityName.trim()) throw new Error("Stock ID (SKU) is required");
              const pid = parseInt(this.formData.ProductID || this.filters.productID);
              if (!pid) throw new Error("Please select a parent Product for this variant");
-             if (this.formData.MRP === undefined || this.formData.MRP === '') throw new Error("Label Price (MRP) is required");
-             if (this.formData.SalePrice === undefined || this.formData.SalePrice === '') throw new Error("Deal / Sale Price is required");
+             if (this.formData.MRP === undefined || this.formData.MRP === null || this.formData.MRP === '') throw new Error("Label Price (MRP) is required");
+             if (this.formData.SalePrice === undefined || this.formData.SalePrice === null || this.formData.SalePrice === '') throw new Error("Deal / Sale Price is required");
+             const cleanMrp = String(this.formData.MRP).replace(/[^0-9.]/g, '').trim();
+             const cleanPrice = parseFloat(String(this.formData.SalePrice).replace(/[^0-9.]/g, ''));
+             if (isNaN(cleanPrice)) throw new Error("Please enter a valid Deal / Sale Price number");
+             const weightVal = (this.formData.Weight !== undefined && this.formData.Weight !== '' && this.formData.Weight !== null) ? parseFloat(this.formData.Weight) : null;
+             const shelfVal = parseInt(this.formData.ShelfID || 1);
 
              if (this.isEditing) {
                 mutation = `mutation($id: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { updateVariant(VariantID: $id, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID SKU } }`;
@@ -896,15 +943,15 @@ const AdminCatalog = {
                    id: parseInt(this.formData.VariantID), 
                    sku: entityName.trim(), 
                    unit: this.formData.Unit || null, 
-                   mrp: String(this.formData.MRP), 
-                   price: parseFloat(this.formData.SalePrice), 
+                   mrp: cleanMrp, 
+                   price: cleanPrice, 
                    size: this.formData.Size || null, 
                    color: this.formData.Color || null, 
-                   weight: this.formData.Weight !== undefined && this.formData.Weight !== '' && this.formData.Weight !== null ? parseFloat(this.formData.Weight) : null, 
+                   weight: weightVal, 
                    img: this.formData.ImageURL || null, 
                    active: !!this.formData.IsActive, 
                    st: this.formData.IsActive ? 'Active' : 'OFS', 
-                   shelf: parseInt(this.formData.ShelfID || 1) 
+                   shelf: shelfVal 
                 };
              } else {
                 mutation = `mutation($pid: Int!, $sku: String, $unit: String, $mrp: String, $price: Float, $size: String, $color: String, $weight: Float, $img: String, $active: Boolean, $st: String, $shelf: Int) { createVariant(ProductID: $pid, SKU: $sku, Unit: $unit, MRP: $mrp, SalePrice: $price, Size: $size, Color: $color, Weight: $weight, ImageURL: $img, IsActive: $active, Status: $st, ShelfID: $shelf) { VariantID SKU } }`;
@@ -912,15 +959,15 @@ const AdminCatalog = {
                    pid, 
                    sku: entityName.trim(), 
                    unit: this.formData.Unit || null, 
-                   mrp: String(this.formData.MRP), 
-                   price: parseFloat(this.formData.SalePrice), 
+                   mrp: cleanMrp, 
+                   price: cleanPrice, 
                    size: this.formData.Size || null, 
                    color: this.formData.Color || null, 
-                   weight: this.formData.Weight !== undefined && this.formData.Weight !== '' && this.formData.Weight !== null ? parseFloat(this.formData.Weight) : null, 
+                   weight: weightVal, 
                    img: this.formData.ImageURL || null, 
                    active: !!this.formData.IsActive, 
                    st: this.formData.IsActive ? 'Active' : 'OFS', 
-                   shelf: parseInt(this.formData.ShelfID || 1) 
+                   shelf: shelfVal 
                 };
              }
           }

@@ -126,8 +126,28 @@ async function main() {
   for (const w of warehouses) {
     const created = await prisma.warehouses.create({ data: w });
     createdWarehouses.push(created);
+
+    // Auto-create Floor store and FL01 shelf for every warehouse
+    const floorStore = await prisma.stores.create({
+      data: {
+        WarehouseID: created.WarehouseID,
+        StoreName: 'Floor',
+        Type: 'Floor',
+        Status: 'Active',
+        Address: created.Address || ''
+      }
+    });
+
+    await prisma.shelves.create({
+      data: {
+        StoreID: floorStore.StoreID,
+        ShelfCode: 'FL01',
+        Level: 1,
+        Position: 1
+      }
+    });
   }
-  console.log(`✅ ${createdWarehouses.length} Warehouses seeded`);
+  console.log(`✅ ${createdWarehouses.length} Warehouses (with Floor stores and FL01 shelves) seeded`);
 
   // 4. Stores (Dark Stores for 10-minute delivery)
   const stores = [

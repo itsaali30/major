@@ -6,7 +6,11 @@ const AdminShelves = {
         <div class="col-12">
           <div class="card">
             <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-              <h4 class="mb-0"><i class="bi bi-stack"></i> Manage Shelves for Store #{{ $route.params.StoreID }}</h4>
+              <h4 class="mb-0">
+                <i class="bi bi-stack"></i> 
+                Manage Shelves for {{ store ? store.StoreName : 'Store #' + $route.params.StoreID }}
+                <small v-if="store && store.Warehouse" class="fs-6 opacity-75">({{ store.Warehouse.Name }})</small>
+              </h4>
               <div>
                 <button v-if="!$root.isIncharge" class="btn btn-success btn-sm me-2" @click="openCreateModal"><i class="bi bi-plus-circle"></i> Add Shelf</button>
                 <button v-if="$root.isIncharge" class="btn btn-success btn-sm me-2" @click="openCreateModal"><i class="bi bi-plus-circle"></i> Create Shelf</button>
@@ -14,10 +18,10 @@ const AdminShelves = {
               </div>
             </div>
             <div class="card-body">
-              <div v-if="loading" class="text-center"><div class="spinner-border"></div></div>
+              <div v-if="loading" class="text-center py-4"><div class="spinner-border"></div></div>
               <div v-else-if="error" class="alert alert-danger">{{ error }}</div>
               <div v-else-if="shelves.length === 0" class="alert alert-info">
-                No shelves found for this store.
+                No shelves found for this store. Click "Add Shelf" to create one.
               </div>
               <div v-else class="table-responsive">
                 <table class="table table-striped table-hover">
@@ -34,8 +38,8 @@ const AdminShelves = {
                     <tr v-for="s in shelves" :key="s.ShelfID">
                       <td>{{ s.ShelfID }}</td>
                       <td><strong>{{ s.ShelfCode }}</strong></td>
-                      <td>Level {{ s.Level }}</td>
-                      <td>Pos {{ s.Position }}</td>
+                      <td>Level {{ s.Level ?? 1 }}</td>
+                      <td>Pos {{ s.Position ?? 1 }}</td>
                       <td>
                         <div class="btn-group btn-group-sm">
                           <button class="btn btn-warning" @click="printQRCode(s)" title="Print QR"><i class="bi bi-qr-code"></i></button>
@@ -65,16 +69,16 @@ const AdminShelves = {
               <form @submit.prevent="saveShelf">
                 <div class="mb-3">
                   <label class="form-label">Shelf Code *</label>
-                  <input type="text" class="form-control" v-model="formData.ShelfCode" required placeholder="e.g. S1-L1-P1">
+                  <input type="text" class="form-control" v-model="formData.ShelfCode" required placeholder="e.g. S1-L1-P1 or FL01">
                 </div>
                 <div class="row">
                   <div class="col-6 mb-3">
                     <label class="form-label">Level</label>
-                    <input type="number" class="form-control" v-model.number="formData.Level">
+                    <input type="number" class="form-control" v-model.number="formData.Level" min="1" placeholder="1">
                   </div>
                   <div class="col-6 mb-3">
                     <label class="form-label">Position</label>
-                    <input type="number" class="form-control" v-model.number="formData.Position">
+                    <input type="number" class="form-control" v-model.number="formData.Position" min="1" placeholder="1">
                   </div>
                 </div>
                 <div class="text-end mt-3">
@@ -97,6 +101,7 @@ const AdminShelves = {
   data() {
     return {
       shelves: [],
+      store: null,
       loading: true,
       error: null,
       modalInstance: null,
@@ -108,21 +113,28 @@ const AdminShelves = {
   },
   mounted() {
     this.fetchShelves();
-    this.modalInstance = new bootstrap.Modal(this.$refs.shelfModal, { backdrop: 'static' });
+    if (this.$refs.shelfModal && window.bootstrap) {
+      this.modalInstance = new bootstrap.Modal(this.$refs.shelfModal, { backdrop: 'static' });
+    }
   },
   methods: {
     getEmptyForm() {
-      return { ShelfID: null, StoreID: parseInt(this.$route.params.StoreID), ShelfCode: '', Level: 0, Position: 0 };
+      return { ShelfID: null, StoreID: parseInt(this.$route.params.StoreID), ShelfCode: '', Level: 1, Position: 1 };
     },
     async fetchShelves() {
       this.loading = true;
+      this.error = null;
       const StoreID = parseInt(this.$route.params.StoreID);
       const token = localStorage.getItem('token');
-      const query = `query { shelvesByStore(StoreID: ${StoreID}) { ShelfID StoreID ShelfCode Level Position } }`;
+      const query = `query { 
+        shelvesByStore(StoreID: ${StoreID}) { ShelfID StoreID ShelfCode Level Position }
+        store(StoreID: ${StoreID}) { StoreID StoreName Type Warehouse { WarehouseID Name } }
+      }`;
       
       try {
         const data = await graphqlRequest(query, {}, token);
-        this.shelves = data.shelvesByStore;
+        this.shelves = data.shelvesByStore || [];
+        this.store = data.store || null;
       } catch (err) {
         this.error = err.message;
       } finally {
@@ -133,16 +145,22 @@ const AdminShelves = {
       this.isEditing = false;
       this.formData = this.getEmptyForm();
       this.modalError = null;
-      this.modalInstance.show();
+      if (this.modalInstance) this.modalInstance.show();
     },
     editShelf(shelf) {
       this.isEditing = true;
-      this.formData = { ...shelf };
+      this.formData = {
+        ShelfID: shelf.ShelfID,
+        StoreID: shelf.StoreID,
+        ShelfCode: shelf.ShelfCode || '',
+        Level: shelf.Level ?? 1,
+        Position: shelf.Position ?? 1
+      };
       this.modalError = null;
-      this.modalInstance.show();
+      if (this.modalInstance) this.modalInstance.show();
     },
     closeModal() {
-      this.modalInstance.hide();
+      if (this.modalInstance) this.modalInstance.hide();
     },
     async saveShelf() {
       this.saving = true;
@@ -150,22 +168,43 @@ const AdminShelves = {
       const token = localStorage.getItem('token');
       
       try {
+        const StoreID = parseInt(this.$route.params.StoreID);
+        const ShelfCode = (this.formData.ShelfCode || '').trim();
+        if (!ShelfCode) {
+          throw new Error('Shelf Code is required');
+        }
+
+        const Level = (this.formData.Level !== '' && this.formData.Level !== null && !isNaN(this.formData.Level)) 
+          ? parseInt(this.formData.Level) : 1;
+        const Position = (this.formData.Position !== '' && this.formData.Position !== null && !isNaN(this.formData.Position)) 
+          ? parseInt(this.formData.Position) : 1;
+
         let mutation, vars;
         if (this.isEditing) {
           mutation = `mutation UpdateShelf($ShelfID: Int!, $ShelfCode: String, $Level: Int, $Position: Int) { 
             updateShelf(ShelfID: $ShelfID, ShelfCode: $ShelfCode, Level: $Level, Position: $Position) { ShelfID } 
           }`;
-          vars = { ...this.formData };
+          vars = {
+            ShelfID: parseInt(this.formData.ShelfID),
+            ShelfCode,
+            Level,
+            Position
+          };
         } else {
           mutation = `mutation CreateShelf($StoreID: Int!, $ShelfCode: String, $Level: Int, $Position: Int) { 
             createShelf(StoreID: $StoreID, ShelfCode: $ShelfCode, Level: $Level, Position: $Position) { ShelfID } 
           }`;
-          vars = { ...this.formData };
+          vars = {
+            StoreID,
+            ShelfCode,
+            Level,
+            Position
+          };
         }
 
         await graphqlRequest(mutation, vars, token);
         this.closeModal();
-        this.fetchShelves();
+        await this.fetchShelves();
       } catch (err) {
         this.modalError = err.message;
       } finally {
@@ -178,15 +217,16 @@ const AdminShelves = {
       const mutation = `mutation DeleteShelf($ShelfID: Int!) { deleteShelf(ShelfID: $ShelfID) }`;
       
       try {
-        await graphqlRequest(mutation, { ShelfID }, token);
-        this.fetchShelves();
+        await graphqlRequest(mutation, { ShelfID: parseInt(ShelfID) }, token);
+        await this.fetchShelves();
       } catch (err) {
         alert(err.message);
       }
     },
     printQRCode(shelf) {
       const qrContainer = document.getElementById('qr-code-print');
-      qrContainer.innerHTML = ''; // Clear previous
+      if (!qrContainer) return;
+      qrContainer.innerHTML = '';
       
       const qrData = JSON.stringify({
         type: 'SHELF',
@@ -195,16 +235,33 @@ const AdminShelves = {
         store: shelf.StoreID
       });
 
+      if (typeof QRCode === 'undefined') {
+        alert('QR Code generator library not loaded.');
+        return;
+      }
+
       new QRCode(qrContainer, {
         text: qrData,
         width: 256,
         height: 256
       });
 
-      // Wait for QR to be generated
       setTimeout(() => {
-        const qrImage = qrContainer.querySelector('img').src;
+        const imgEl = qrContainer.querySelector('img');
+        const canvasEl = qrContainer.querySelector('canvas');
+        const qrImage = (imgEl && imgEl.src) ? imgEl.src : (canvasEl ? canvasEl.toDataURL() : '');
+        
+        if (!qrImage) {
+          alert('Failed to generate QR code.');
+          return;
+        }
+
         const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          alert('Popup blocked. Please allow popups to print QR code.');
+          return;
+        }
+
         printWindow.document.write(`
           <html>
             <head>
@@ -221,7 +278,7 @@ const AdminShelves = {
                 <h1>SHELF: ${shelf.ShelfCode}</h1>
                 <h2>Store ID: ${shelf.StoreID} | Shelf ID: ${shelf.ShelfID}</h2>
                 <img src="${qrImage}" width="300" />
-                <p>Scan to identity shelf in inventory management</p>
+                <p>Scan to identify shelf in inventory management</p>
               </div>
               <script>
                 window.onload = function() { window.print(); window.close(); };
@@ -230,7 +287,7 @@ const AdminShelves = {
           </html>
         `);
         printWindow.document.close();
-      }, 500);
+      }, 300);
     }
   }
 };

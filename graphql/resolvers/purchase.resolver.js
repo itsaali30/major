@@ -49,25 +49,39 @@ const purchaseResolvers = {
         const itemsWithStructure = (Items || []).map(item => {
           const v = variants.find(x => x.VariantID === parseInt(item.VariantID));
           const prod = v ? products.find(p => p.ProductID === v.ProductID) : null;
-          const subtotal = (item.Qty || 0) * (item.Cost || 0);
+          const cost = (item.Cost !== undefined && item.Cost !== null && !isNaN(item.Cost)) ? parseFloat(item.Cost) : 0;
+          const subtotal = (item.Qty || 0) * cost;
           totalAmount += subtotal;
           
           return {
             VariantID: parseInt(item.VariantID),
             VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})` : (v ? v.SKU : 'Unknown'),
             UOM: item.UOM || (v ? v.Unit : 'PCS'),
-            Qty: parseInt(item.Qty),
-            Cost: parseFloat(item.Cost),
+            Qty: parseInt(item.Qty || 1),
+            Cost: cost,
             Subtotal: subtotal
           };
         });
+
+        const userRole = (context.user?.Role || '').toLowerCase();
+        let finalStatus = Status || 'draft';
+        // Store incharge orders always land in the cart (draft)
+        if (userRole === 'incharge') {
+          finalStatus = 'draft';
+        }
+
+        let parsedExpectedDate = null;
+        if (ExpectedDate) {
+          const d = new Date(ExpectedDate);
+          if (!isNaN(d.getTime())) parsedExpectedDate = d;
+        }
 
         return await prisma.purchaseOrders.create({
           data: {
             WarehouseID: parseInt(WarehouseID),
             MerchantID: parseInt(MerchantID),
-            ExpectedDate: ExpectedDate ? new Date(ExpectedDate) : null,
-            Status: Status || 'draft',
+            ExpectedDate: parsedExpectedDate,
+            Status: finalStatus,
             TotalAmount: totalAmount,
             CreatedBy: context.user ? context.user.UserID : null,
             Items: {
@@ -82,15 +96,30 @@ const purchaseResolvers = {
       }
     },
 
-    updatePurchaseOrder: async (_, args) => {
+    updatePurchaseOrder: async (_, args, { user }) => {
       try {
+        if (!user) throw new Error('Not authenticated');
         const { POID, WarehouseID, MerchantID, ExpectedDate, Status, Items } = args;
         
         const updateData = {};
         if (WarehouseID) updateData.WarehouseID = parseInt(WarehouseID);
         if (MerchantID) updateData.MerchantID = parseInt(MerchantID);
-        if (ExpectedDate) updateData.ExpectedDate = new Date(ExpectedDate);
-        if (Status) updateData.Status = Status;
+        if (ExpectedDate) {
+          const d = new Date(ExpectedDate);
+          if (!isNaN(d.getTime())) updateData.ExpectedDate = d;
+        }
+        if (Status) {
+          // If status change is an approval action (e.g. 'ordered' or 'approved')
+          if (['ordered', 'approved'].includes(Status.toLowerCase())) {
+            const role = (user.Role || '').toLowerCase();
+            const allowedApprovalRoles = ['superadmin', 'admin', 'manager', 'accountant', 'accountmanager', 'accountantmanager'];
+            if (!allowedApprovalRoles.includes(role)) {
+              throw new Error('Not authorized to approve purchase orders. Only superadmin, admin, manager, accountant, and account manager can approve.');
+            }
+            updateData.ApprovedBy = user.UserID;
+          }
+          updateData.Status = Status;
+        }
 
         if (Items) {
           // Recalculate if items changed
@@ -110,14 +139,15 @@ const purchaseResolvers = {
           const newItems = Items.map(item => {
             const v = variants.find(x => x.VariantID === parseInt(item.VariantID));
             const prod = v ? products.find(p => p.ProductID === v.ProductID) : null;
-            const subtotal = (item.Qty || 0) * (item.Cost || 0);
+            const cost = (item.Cost !== undefined && item.Cost !== null && !isNaN(item.Cost)) ? parseFloat(item.Cost) : 0;
+            const subtotal = (item.Qty || 0) * cost;
             totalAmount += subtotal;
             return {
               VariantID: parseInt(item.VariantID),
               VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})` : (v ? v.SKU : 'Unknown'),
               UOM: item.UOM || (v ? v.Unit : 'PCS'),
-              Qty: parseInt(item.Qty),
-              Cost: parseFloat(item.Cost),
+              Qty: parseInt(item.Qty || 1),
+              Cost: cost,
               Subtotal: subtotal
             };
           });
@@ -139,7 +169,13 @@ const purchaseResolvers = {
       }
     },
 
-    deletePurchaseOrder: async (_, { POID }) => {
+    deletePurchaseOrder: async (_, { POID }, { user }) => {
+      if (!user) throw new Error('Not authenticated');
+      const deleteRoles = ['superadmin', 'admin', 'manager'];
+      if (!deleteRoles.includes((user.Role || '').toLowerCase())) {
+        throw new Error('Not authorized to delete purchase orders');
+      }
+      await prisma.purchaseOrderItems.deleteMany({ where: { POID: parseInt(POID) } });
       await prisma.purchaseOrders.delete({ where: { POID: parseInt(POID) } });
       return true;
     }
@@ -152,6 +188,26 @@ const purchaseResolvers = {
     MerchantName: async (parent) => {
       const m = await prisma.merchants.findUnique({ where: { MerchantID: parent.MerchantID } });
       return m ? m.Name : 'N/A';
+    },
+    MerchantContact: async (parent) => {
+      const m = await prisma.merchants.findUnique({ where: { MerchantID: parent.MerchantID } });
+      return m ? m.Contact : null;
+    },
+    MerchantWhatsApp: async (parent) => {
+      const mc = await prisma.merchantContacts.findFirst({
+        where: {
+          MerchantID: parent.MerchantID,
+          OR: [
+            { whatsapp: { not: null } },
+            { Phone: { not: null } }
+          ]
+        }
+      });
+      if (mc && (mc.whatsapp || mc.Phone)) {
+        return mc.whatsapp || mc.Phone;
+      }
+      const m = await prisma.merchants.findUnique({ where: { MerchantID: parent.MerchantID } });
+      return m ? m.Contact : null;
     }
   },
   PurchaseOrderItem: {

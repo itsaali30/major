@@ -6,7 +6,8 @@ const apiClient = axios.create({
   baseURL: '',
   headers: {
     'Content-Type': 'application/json',
-    'apollo-require-preflight': 'true'
+    'apollo-require-preflight': 'true',
+    'ngrok-skip-browser-warning': 'true'
   },
   withCredentials: true,
   timeout: 10000
@@ -16,7 +17,8 @@ const apiClient = axios.create({
 async function graphqlRequest(query, variables, token) {
   const headers = { 
     'Content-Type': 'application/json',
-    'apollo-require-preflight': 'true'
+    'apollo-require-preflight': 'true',
+    'ngrok-skip-browser-warning': 'true'
   };
   if (token) headers['Authorization'] = 'Bearer ' + token;
 

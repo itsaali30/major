@@ -36,6 +36,27 @@ services:
       timeout: 5s
       retries: 5
 
+  app:
+    build: .
+    container_name: major_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/ecommerce_db?schema=public
+      JWT_SECRET: super-secret-jwt-key
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: admin123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   minio_data:
