@@ -308,6 +308,7 @@ model Variants {
   Color      String?
   MRP        String?
   SalePrice  Float?
+  Cost       Float?
   ExpiryDate DateTime?
   Status     String?
   Unit       String?

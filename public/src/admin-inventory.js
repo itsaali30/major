@@ -9,6 +9,27 @@ const AdminInventory = {
         .stock-row:hover {
           background-color: #f0fdf4 !important;
         }
+        .filter-row th {
+          background-color: #f8fafc !important;
+          border-bottom: 2px solid #cbd5e1 !important;
+          padding: 6px 8px !important;
+        }
+        .filter-row input, .filter-row select {
+          font-size: 0.8rem !important;
+          padding: 4px 8px !important;
+          border-radius: 6px !important;
+        }
+        .current-stock-header {
+          background-color: #065f46 !important;
+          color: #ecfdf5 !important;
+        }
+        .kpi-card-inventory {
+          border-radius: 12px;
+          transition: transform 0.15s ease-in-out;
+        }
+        .kpi-card-inventory:hover {
+          transform: translateY(-2px);
+        }
         .location-card {
           border-left: 4px solid #0d6efd;
         }
@@ -23,12 +44,12 @@ const AdminInventory = {
         <div class="card-body p-4">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div>
-               <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-stack me-2 text-primary"></i> Stock & Inventory Management</h4>
-               <p class="text-muted small mb-0">Track real-time stock levels, warehouse shelves, and designated return store locations.</p>
+               <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-stack me-2 text-primary"></i> Stock & Inventory Valuation Management</h4>
+               <p class="text-muted small mb-0">Live stock valuation, Cost Value, Sale Value, Current Stock levels, and Return Store tracking.</p>
             </div>
             
             <div class="d-flex flex-wrap gap-3 align-items-center">
-               <!-- Selected Warehouse Option (Requested) -->
+               <!-- Selected Warehouse -->
                <div>
                   <label class="fw-bold x-small text-muted text-uppercase mb-1 d-block">
                      <i class="bi bi-building me-1 text-primary"></i> Selected Warehouse:
@@ -62,50 +83,168 @@ const AdminInventory = {
         </div>
       </div>
 
-      <!-- Inventory Table -->
+      <!-- 4 Prominent Valuation & Current Stock KPI Cards (Requested: CURRENT STOCK, COST VALUE, SALE VALUE) -->
+      <div class="row g-3 mb-4">
+         <!-- Card 1: CURRENT STOCK (Live Total Units) -->
+         <div class="col-lg-3 col-md-6">
+            <div class="card kpi-card-inventory border-0 shadow-sm bg-white p-3 border-start border-4 border-success h-100">
+               <div class="d-flex justify-content-between align-items-center">
+                  <div class="text-muted small text-uppercase fw-bold text-success">CURRENT STOCK (AVAILABLE)</div>
+                  <i class="bi bi-box-seam-fill fs-4 text-success opacity-75"></i>
+               </div>
+               <h2 class="fw-bold text-success mt-2 mb-0">{{ summaryStats.totalCurrentStock }} <small class="fs-6 fw-normal text-muted">Units</small></h2>
+               <div class="x-small text-muted mt-2">
+                  Total On-Hand: <strong>{{ summaryStats.totalOnHand }}</strong> | Reserved: <strong>{{ summaryStats.totalReserved }}</strong>
+               </div>
+            </div>
+         </div>
+
+         <!-- Card 2: TOTAL COST VALUE -->
+         <div class="col-lg-3 col-md-6">
+            <div class="card kpi-card-inventory border-0 shadow-sm bg-white p-3 border-start border-4 border-warning h-100">
+               <div class="d-flex justify-content-between align-items-center">
+                  <div class="text-muted small text-uppercase fw-bold text-dark">TOTAL COST VALUE</div>
+                  <i class="bi bi-cash-stack fs-4 text-warning opacity-75"></i>
+               </div>
+               <h2 class="fw-bold text-dark mt-2 mb-0">₹{{ summaryStats.totalCostValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</h2>
+               <div class="x-small text-muted mt-2">
+                  Calculated based on actual procurement/GRN cost
+               </div>
+            </div>
+         </div>
+
+         <!-- Card 3: TOTAL SALE VALUE -->
+         <div class="col-lg-3 col-md-6">
+            <div class="card kpi-card-inventory border-0 shadow-sm bg-white p-3 border-start border-4 border-primary h-100">
+               <div class="d-flex justify-content-between align-items-center">
+                  <div class="text-muted small text-uppercase fw-bold text-primary">TOTAL SALE VALUE</div>
+                  <i class="bi bi-tags-fill fs-4 text-primary opacity-75"></i>
+               </div>
+               <h2 class="fw-bold text-primary mt-2 mb-0">₹{{ summaryStats.totalSaleValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</h2>
+               <div class="x-small text-muted mt-2">
+                  Retail valuation at catalog selling price
+               </div>
+            </div>
+         </div>
+
+         <!-- Card 4: EXPECTED PROFIT MARGIN -->
+         <div class="col-lg-3 col-md-6">
+            <div class="card kpi-card-inventory border-0 shadow-sm bg-white p-3 border-start border-4 border-info h-100">
+               <div class="d-flex justify-content-between align-items-center">
+                  <div class="text-muted small text-uppercase fw-bold text-info">EXPECTED MARGIN / PROFIT</div>
+                  <i class="bi bi-graph-up-arrow fs-4 text-info opacity-75"></i>
+               </div>
+               <h2 class="fw-bold text-info mt-2 mb-0">₹{{ summaryStats.totalProfitValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</h2>
+               <div class="x-small text-muted mt-2">
+                  Estimated Gross Margin: <strong>{{ summaryStats.marginPercent }}%</strong>
+               </div>
+            </div>
+         </div>
+      </div>
+
+      <!-- Main Inventory Table with Filter Heading Row -->
       <div class="card border-0 shadow-sm overflow-hidden mb-5">
         <div class="card-header bg-white border-bottom py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-           <div class="input-group" style="max-width: 400px;">
-              <span class="input-group-text bg-light border-0"><i class="bi bi-search"></i></span>
-              <input type="text" class="form-control bg-light border-0" placeholder="Search by product, SKU, specs, shelf..." v-model="searchQuery">
+           <div class="d-flex align-items-center gap-2">
+              <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2 text-primary"></i> Stock Valuation & Inventory Matrix</h5>
+              <span class="badge bg-primary ms-2">{{ filteredStocks.length }} Displayed Items</span>
            </div>
-           <div class="text-muted small">
-              <span class="badge bg-primary me-2">{{ filteredStocks.length }} Records</span>
-              <span class="text-secondary"><i class="bi bi-info-circle me-1"></i> Click any row to inspect physical location & return store</span>
+           <div class="d-flex gap-2 align-items-center">
+              <button class="btn btn-sm btn-outline-secondary" @click="resetFilters" v-if="hasActiveFilters">
+                 <i class="bi bi-x-circle me-1"></i> Clear Filters
+              </button>
+              <div class="text-secondary small">
+                 <i class="bi bi-info-circle me-1"></i> Click row to inspect location & return store
+              </div>
            </div>
         </div>
 
         <div v-if="loading" class="text-center py-5">
            <div class="spinner-border text-primary" role="status"></div>
-           <p class="text-muted mt-2">Loading stock levels...</p>
+           <p class="text-muted mt-2">Calculating stock values & locations...</p>
         </div>
 
         <div v-else class="table-responsive">
           <table class="table align-middle mb-0 table-hover">
+            <!-- Table Main Header Row -->
             <thead class="bg-dark text-white small text-uppercase">
                <tr>
-                  <th class="ps-4">Product & Specs</th>
-                  <th>Store</th>
-                  <th>Shelf</th>
-                  <th class="text-center">On Hand</th>
-                  <th class="text-center">Reserved</th>
-                  <th class="text-center">Available (Current Stock)</th>
-                  <th class="text-end pe-4">Locations & Return Store</th>
+                  <th class="ps-3" style="min-width: 200px;">Product & Specs</th>
+                  <th style="min-width: 140px;">Store</th>
+                  <th style="min-width: 100px;">Shelf</th>
+                  <th class="text-end" style="min-width: 100px;">Unit Cost</th>
+                  <th class="text-end" style="min-width: 110px;">Cost Value</th>
+                  <th class="text-end" style="min-width: 100px;">Sale Price</th>
+                  <th class="text-end" style="min-width: 110px;">Sale Value</th>
+                  <th class="text-center" style="min-width: 90px;">On Hand</th>
+                  <!-- CURRENT STOCK HEADING (Requested) -->
+                  <th class="text-center current-stock-header fw-bold" style="min-width: 140px;">
+                     <i class="bi bi-box-seam me-1"></i> CURRENT STOCK
+                  </th>
+                  <th class="text-end pe-3" style="min-width: 140px;">Location & Return</th>
+               </tr>
+
+               <!-- FILTER HEADING ROW (Requested: "fitter heading row hona add karoyeh") -->
+               <tr class="filter-row">
+                  <!-- Product filter -->
+                  <th class="ps-3">
+                     <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0 py-0 px-2"><i class="bi bi-search x-small"></i></span>
+                        <input type="text" class="form-control form-control-sm border-start-0" placeholder="Filter product / SKU..." v-model="filterProduct">
+                     </div>
+                  </th>
+                  <!-- Store filter -->
+                  <th>
+                     <select class="form-select form-select-sm" v-model="filterStore">
+                        <option value="">All Stores</option>
+                        <option v-for="st in uniqueStores" :key="st" :value="st">{{ st }}</option>
+                     </select>
+                  </th>
+                  <!-- Shelf filter -->
+                  <th>
+                     <input type="text" class="form-control form-control-sm" placeholder="Shelf code..." v-model="filterShelf">
+                  </th>
+                  <!-- Cost filters -->
+                  <th colspan="2" class="text-end">
+                     <span class="x-small text-muted">Cost Valued</span>
+                  </th>
+                  <!-- Sale filters -->
+                  <th colspan="2" class="text-end">
+                     <span class="x-small text-muted">Sale Valued</span>
+                  </th>
+                  <!-- On Hand header -->
+                  <th></th>
+                  <!-- Current Stock / Status filter -->
+                  <th>
+                     <select class="form-select form-select-sm fw-bold" v-model="filterStockStatus">
+                        <option value="">All Status</option>
+                        <option value="in_stock">In Stock (>0)</option>
+                        <option value="low_stock">Low Stock (≤10)</option>
+                        <option value="out_of_stock">Out of Stock (=0)</option>
+                     </select>
+                  </th>
+                  <!-- Reset / Actions -->
+                  <th class="text-end pe-3">
+                     <button class="btn btn-sm btn-link text-muted p-0 x-small text-decoration-none" @click="resetFilters" v-if="hasActiveFilters">
+                        Reset
+                     </button>
+                  </th>
                </tr>
             </thead>
+
             <tbody>
-               <tr v-for="s in filteredStocks" :key="s.StockID ? s.StockID : (s.StoreID + '-' + s.VariantID)" class="stock-row" @click="inspectStock(s)" title="Click to view where this stock is located & return store">
-                  <!-- Column 1: Product & Specs -->
-                  <td class="ps-4">
+               <tr v-for="s in filteredStocks" :key="s.StockID ? s.StockID : (s.StoreID + '-' + s.VariantID)" class="stock-row" @click="inspectStock(s)" title="Click to inspect where this stock is located & return store">
+                  <!-- 1. Product & Specs -->
+                  <td class="ps-3">
                      <div class="fw-bold text-dark">{{ s.productName }}</div>
-                     <div class="small text-muted d-flex align-items-center gap-2 mt-1">
+                     <div class="small text-muted d-flex align-items-center gap-1 mt-1">
                         <span class="badge bg-light text-dark border">SKU: {{ s.sku }}</span>
                         <span v-if="s.specs" class="text-secondary fw-semibold">{{ s.specs }}</span>
                         <span class="badge bg-secondary-subtle text-secondary">{{ s.unit }}</span>
                      </div>
                   </td>
 
-                  <!-- Column 2: Store -->
+                  <!-- 2. Store -->
                   <td>
                      <div class="fw-bold small text-dark">{{ s.storeName }}</div>
                      <div class="x-small text-muted">{{ s.warehouseName }}</div>
@@ -114,35 +253,50 @@ const AdminInventory = {
                      </span>
                   </td>
 
-                  <!-- Column 3: Shelf -->
+                  <!-- 3. Shelf -->
                   <td>
                      <span class="badge bg-light text-primary border px-2 py-1 fw-bold fs-7">
                         <i class="bi bi-geo-alt-fill me-1"></i> {{ s.shelfCode }}
                      </span>
                   </td>
 
-                  <!-- Column 4: On Hand -->
-                  <td class="text-center">
-                     <span class="fw-bold fs-6 text-dark">{{ s.OnHandQty || 0 }}</span>
+                  <!-- 4. Unit Cost (₹) -->
+                  <td class="text-end fw-semibold text-muted small">
+                     ₹{{ s.unitCost.toFixed(2) }}
                   </td>
 
-                  <!-- Column 5: Reserved -->
-                  <td class="text-center">
-                     <span class="badge rounded-pill bg-light text-muted border px-2 py-1">{{ s.ReservedQty || 0 }}</span>
+                  <!-- 5. COST VALUE (₹) (Requested) -->
+                  <td class="text-end fw-bold text-dark">
+                     ₹{{ s.costValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                   </td>
 
-                  <!-- Column 6: Available (Current Stock) -->
-                  <td class="text-center">
+                  <!-- 6. Unit Sale Price (₹) -->
+                  <td class="text-end fw-semibold text-primary small">
+                     ₹{{ s.unitSalePrice.toFixed(2) }}
+                  </td>
+
+                  <!-- 7. SALE VALUE (₹) (Requested) -->
+                  <td class="text-end fw-bold text-primary">
+                     ₹{{ s.saleValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                  </td>
+
+                  <!-- 8. On Hand -->
+                  <td class="text-center fw-bold text-dark">
+                     {{ s.OnHandQty || 0 }}
+                  </td>
+
+                  <!-- 9. CURRENT STOCK (Available) (Requested: CURRENT STOCK HEADING) -->
+                  <td class="text-center bg-success-subtle border-start border-end">
                      <span class="fw-bold fs-6" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
                         {{ s.AvailableQty || 0 }}
                      </span>
-                     <div class="x-small" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
+                     <div class="x-small fw-bold" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
                         {{ s.AvailableQty > 0 ? 'In Stock' : 'Out of Stock' }}
                      </div>
                   </td>
 
-                  <!-- Column 7: Action / Inspect -->
-                  <td class="text-end pe-4" @click.stop>
+                  <!-- 10. Location & Return Store Action -->
+                  <td class="text-end pe-3" @click.stop>
                      <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" @click="inspectStock(s)">
                         <i class="bi bi-pin-map-fill me-1"></i> View Location
                      </button>
@@ -150,12 +304,26 @@ const AdminInventory = {
                </tr>
 
                <tr v-if="filteredStocks.length === 0">
-                  <td colspan="7" class="text-center py-5 text-muted">
+                  <td colspan="10" class="text-center py-5 text-muted">
                      <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
                      No inventory records found matching your filters.
                   </td>
                </tr>
             </tbody>
+
+            <!-- Table Footer with Column Totals -->
+            <tfoot class="bg-light fw-bold" v-if="filteredStocks.length > 0">
+               <tr>
+                  <td colspan="3" class="ps-3 text-uppercase">Page Totals ({{ filteredStocks.length }} Items):</td>
+                  <td class="text-end text-muted small">-</td>
+                  <td class="text-end text-dark">₹{{ summaryStats.totalCostValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
+                  <td class="text-end text-muted small">-</td>
+                  <td class="text-end text-primary">₹{{ summaryStats.totalSaleValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
+                  <td class="text-center text-dark">{{ summaryStats.totalOnHand }}</td>
+                  <td class="text-center bg-success-subtle text-success fs-6">{{ summaryStats.totalCurrentStock }} Units</td>
+                  <td></td>
+               </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -181,10 +349,15 @@ const AdminInventory = {
                            <strong>Specs:</strong> {{ selectedStockItem.specs || 'Standard' }} | 
                            <strong>UOM:</strong> {{ selectedStockItem.unit }}
                         </div>
+                        <div class="small text-muted mt-1">
+                           <strong>Unit Cost:</strong> ₹{{ selectedStockItem.unitCost.toFixed(2) }} | 
+                           <strong>Sale Price:</strong> ₹{{ selectedStockItem.unitSalePrice.toFixed(2) }}
+                        </div>
                      </div>
                      <div class="text-end">
-                        <div class="text-muted x-small text-uppercase fw-bold">Current Row Stock</div>
-                        <h4 class="fw-bold text-success mb-0">{{ selectedStockItem.AvailableQty || 0 }} Units</h4>
+                        <div class="text-muted x-small text-uppercase fw-bold">CURRENT STOCK</div>
+                        <h3 class="fw-bold text-success mb-0">{{ selectedStockItem.AvailableQty || 0 }} Units</h3>
+                        <div class="x-small text-muted">Cost Value: ₹{{ selectedStockItem.costValue.toFixed(2) }}</div>
                      </div>
                   </div>
                </div>
@@ -202,7 +375,7 @@ const AdminInventory = {
                               <th>Store</th>
                               <th>Shelf Code</th>
                               <th class="text-center">On Hand</th>
-                              <th class="text-center">Available</th>
+                              <th class="text-center">Available (Current Stock)</th>
                               <th>Type</th>
                            </tr>
                         </thead>
@@ -290,8 +463,13 @@ const AdminInventory = {
       selectedWarehouseID: null,
       selectedStoreID: null,
       stocks: [],
-      searchQuery: '',
       loading: false,
+
+      // Column Filters (Requested: "fitter heading row hona add karoyeh")
+      filterProduct: '',
+      filterStore: '',
+      filterShelf: '',
+      filterStockStatus: '', // '', 'in_stock', 'low_stock', 'out_of_stock'
       
       // Modal
       selectedStockItem: null,
@@ -305,22 +483,73 @@ const AdminInventory = {
       if (!this.selectedWarehouseID) return this.stores;
       return this.stores.filter(s => s.WarehouseID === this.selectedWarehouseID);
     },
+    uniqueStores() {
+      const names = this.stocks.map(s => s.storeName).filter(Boolean);
+      return Array.from(new Set(names)).sort();
+    },
+    hasActiveFilters() {
+      return !!(this.filterProduct || this.filterStore || this.filterShelf || this.filterStockStatus);
+    },
     filteredStocks() {
       return this.stocks.filter(s => {
-        // Warehouse filter
+        // Top Warehouse filter
         if (this.selectedWarehouseID && s.warehouseId !== this.selectedWarehouseID) return false;
-        // Store filter
+        // Top Store filter
         if (this.selectedStoreID && s.StoreID !== this.selectedStoreID) return false;
 
-        // Search query filter
-        if (!this.searchQuery) return true;
-        const q = this.searchQuery.toLowerCase();
-        return (s.productName || '').toLowerCase().includes(q) ||
-               (s.sku || '').toLowerCase().includes(q) ||
-               (s.specs || '').toLowerCase().includes(q) ||
-               (s.storeName || '').toLowerCase().includes(q) ||
-               (s.shelfCode || '').toLowerCase().includes(q);
+        // Filter Heading Row: Product filter
+        if (this.filterProduct) {
+          const q = this.filterProduct.toLowerCase();
+          const match = (s.productName || '').toLowerCase().includes(q) ||
+                        (s.sku || '').toLowerCase().includes(q) ||
+                        (s.specs || '').toLowerCase().includes(q);
+          if (!match) return false;
+        }
+
+        // Filter Heading Row: Store filter
+        if (this.filterStore && s.storeName !== this.filterStore) return false;
+
+        // Filter Heading Row: Shelf filter
+        if (this.filterShelf) {
+          const sh = this.filterShelf.toLowerCase();
+          if (!(s.shelfCode || '').toLowerCase().includes(sh)) return false;
+        }
+
+        // Filter Heading Row: Stock Status filter
+        if (this.filterStockStatus === 'in_stock' && (s.AvailableQty || 0) <= 0) return false;
+        if (this.filterStockStatus === 'low_stock' && ((s.AvailableQty || 0) <= 0 || (s.AvailableQty || 0) > 10)) return false;
+        if (this.filterStockStatus === 'out_of_stock' && (s.AvailableQty || 0) > 0) return false;
+
+        return true;
       });
+    },
+    summaryStats() {
+      let currentStock = 0;
+      let onHand = 0;
+      let reserved = 0;
+      let costVal = 0;
+      let saleVal = 0;
+
+      for (const s of this.filteredStocks) {
+        currentStock += (s.AvailableQty || 0);
+        onHand += (s.OnHandQty || 0);
+        reserved += (s.ReservedQty || 0);
+        costVal += (s.costValue || 0);
+        saleVal += (s.saleValue || 0);
+      }
+
+      const profit = Math.max(0, saleVal - costVal);
+      const margin = saleVal > 0 ? ((profit / saleVal) * 100).toFixed(1) : '0.0';
+
+      return {
+        totalCurrentStock: currentStock,
+        totalOnHand: onHand,
+        totalReserved: reserved,
+        totalCostValue: costVal,
+        totalSaleValue: saleVal,
+        totalProfitValue: profit,
+        marginPercent: margin
+      };
     }
   },
   async mounted() {
@@ -341,7 +570,6 @@ const AdminInventory = {
         this.warehouses = data.allWarehouses || [];
         this.stores = data.allStores || [];
         
-        // Default to first warehouse if available
         if (this.warehouses.length > 0) {
           this.selectedWarehouseID = this.warehouses[0].WarehouseID;
         }
@@ -354,6 +582,12 @@ const AdminInventory = {
       this.selectedStoreID = null;
       this.fetchStock();
     },
+    resetFilters() {
+      this.filterProduct = '';
+      this.filterStore = '';
+      this.filterShelf = '';
+      this.filterStockStatus = '';
+    },
     async fetchStock() {
       this.loading = true;
       const token = localStorage.getItem('token');
@@ -361,8 +595,9 @@ const AdminInventory = {
         allStocks(WarehouseID: $wid, StoreID: $sid) {
           StockID StoreID VariantID ShelfID OnHandQty ReservedQty AvailableQty
           WarehouseID WarehouseName StoreName StoreType ShelfCode
+          UnitCost UnitSalePrice CostValue SaleValue
           variant {
-            VariantID ProductID SKU Size Color Unit MRP
+            VariantID ProductID SKU Size Color Unit MRP SalePrice Cost
             product { ProductID ProductName }
           }
           ReturnStore {
@@ -386,7 +621,12 @@ const AdminInventory = {
           const specsParts = [];
           if (v.Size) specsParts.push(v.Size);
           if (v.Color) specsParts.push(v.Color);
-          
+
+          const uCost = (s.UnitCost !== undefined && s.UnitCost !== null) ? s.UnitCost : (v.Cost || 0);
+          const uSale = (s.UnitSalePrice !== undefined && s.UnitSalePrice !== null) ? s.UnitSalePrice : (v.SalePrice || (v.MRP ? parseFloat(v.MRP) : 0));
+          const cVal = (s.CostValue !== undefined && s.CostValue !== null) ? s.CostValue : ((s.OnHandQty || 0) * uCost);
+          const sVal = (s.SaleValue !== undefined && s.SaleValue !== null) ? s.SaleValue : ((s.OnHandQty || 0) * uSale);
+
           return {
             StockID: s.StockID,
             StoreID: s.StoreID,
@@ -395,6 +635,10 @@ const AdminInventory = {
             OnHandQty: s.OnHandQty || 0,
             ReservedQty: s.ReservedQty || 0,
             AvailableQty: s.AvailableQty || 0,
+            unitCost: uCost,
+            unitSalePrice: uSale,
+            costValue: cVal,
+            saleValue: sVal,
             warehouseId: s.WarehouseID,
             warehouseName: s.WarehouseName || 'Main Hub',
             storeName: s.StoreName || 'Store',

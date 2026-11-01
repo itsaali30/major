@@ -304,6 +304,68 @@ const inventoryResolvers = {
         });
       }
       return res;
+    },
+    UnitCost: async (parent) => {
+      const v = await prisma.variants.findUnique({ where: { VariantID: parent.VariantID } });
+      if (v && v.Cost !== null && v.Cost !== undefined && v.Cost > 0) return v.Cost;
+
+      // Lookup latest GRN Item cost
+      const lastGRN = await prisma.gRNItems.findFirst({
+        where: { VariantID: parent.VariantID },
+        orderBy: { GRNItemID: 'desc' }
+      });
+      if (lastGRN && lastGRN.Cost) return lastGRN.Cost;
+
+      // Lookup latest PO Item cost
+      const lastPO = await prisma.purchaseOrderItems.findFirst({
+        where: { VariantID: parent.VariantID },
+        orderBy: { ItemID: 'desc' }
+      });
+      if (lastPO && lastPO.Cost) return lastPO.Cost;
+
+      // Fallback based on SalePrice/MRP
+      const sale = (v && v.SalePrice) ? v.SalePrice : (v && v.MRP ? parseFloat(v.MRP) : 50);
+      return Math.round(sale * 0.75 * 100) / 100;
+    },
+    UnitSalePrice: async (parent) => {
+      const v = await prisma.variants.findUnique({ where: { VariantID: parent.VariantID } });
+      if (v && v.SalePrice) return v.SalePrice;
+      if (v && v.MRP) {
+        const mrpNum = parseFloat(v.MRP);
+        if (!isNaN(mrpNum)) return mrpNum;
+      }
+      return 0;
+    },
+    CostValue: async (parent) => {
+      const qty = parent.OnHandQty !== null && parent.OnHandQty !== undefined ? parent.OnHandQty : (parent.AvailableQty || 0);
+      const v = await prisma.variants.findUnique({ where: { VariantID: parent.VariantID } });
+      let cost = 0;
+      if (v && v.Cost !== null && v.Cost !== undefined && v.Cost > 0) {
+        cost = v.Cost;
+      } else {
+        const lastGRN = await prisma.gRNItems.findFirst({
+          where: { VariantID: parent.VariantID },
+          orderBy: { GRNItemID: 'desc' }
+        });
+        if (lastGRN && lastGRN.Cost) {
+          cost = lastGRN.Cost;
+        } else {
+          const sale = (v && v.SalePrice) ? v.SalePrice : (v && v.MRP ? parseFloat(v.MRP) : 50);
+          cost = Math.round(sale * 0.75 * 100) / 100;
+        }
+      }
+      return Math.round(qty * cost * 100) / 100;
+    },
+    SaleValue: async (parent) => {
+      const qty = parent.OnHandQty !== null && parent.OnHandQty !== undefined ? parent.OnHandQty : (parent.AvailableQty || 0);
+      const v = await prisma.variants.findUnique({ where: { VariantID: parent.VariantID } });
+      let sale = 0;
+      if (v && v.SalePrice) sale = v.SalePrice;
+      else if (v && v.MRP) {
+        const mrpNum = parseFloat(v.MRP);
+        if (!isNaN(mrpNum)) sale = mrpNum;
+      }
+      return Math.round(qty * sale * 100) / 100;
     }
   }
 };

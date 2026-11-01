@@ -41,6 +41,12 @@ const inventorySchema = `#graphql
     ShelfCode: String
     ReturnStore: ReturnStoreInfo
     AllLocations: [StockLocation]
+
+    # Values: Cost Value & Sale Value
+    UnitCost: Float
+    UnitSalePrice: Float
+    CostValue: Float
+    SaleValue: Float
   }
 
   extend type Query {

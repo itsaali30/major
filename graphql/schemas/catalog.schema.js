@@ -50,6 +50,7 @@ const catalogSchema = `#graphql
     Color: String
     MRP: String
     SalePrice: Float
+    Cost: Float
     ExpiryDate: String
     ValidDays: Int
     Status: String
