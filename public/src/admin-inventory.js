@@ -1,205 +1,441 @@
 const AdminInventory = {
   template: `
     <div class="container-fluid my-4">
-      <!-- Header -->
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-           <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-stack me-2 text-primary"></i> Stock Management</h4>
-           <p class="text-muted small mb-0">Control physical inventory levels for all product variants across your stores.</p>
-        </div>
-        <div class="d-flex gap-2 align-items-center">
-           <label class="fw-bold small text-muted text-uppercase mb-0 me-2">Selected Store:</label>
-           <select class="form-select border-0 shadow-sm bg-white fw-bold" style="min-width: 200px;" v-model="selectedStoreID" @change="fetchStock">
-              <option :value="null" disabled>-- Select Store --</option>
-              <option v-for="s in stores" :key="s.StoreID" :value="s.StoreID">{{ s.StoreName }}</option>
-           </select>
+      <style>
+        .stock-row {
+          cursor: pointer;
+          transition: background-color 0.15s ease-in-out;
+        }
+        .stock-row:hover {
+          background-color: #f0fdf4 !important;
+        }
+        .location-card {
+          border-left: 4px solid #0d6efd;
+        }
+        .return-card {
+          border-left: 4px solid #dc3545;
+          background-color: #fef2f2;
+        }
+      </style>
+
+      <!-- Header & Warehouse / Store Selectors -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+               <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-stack me-2 text-primary"></i> Stock & Inventory Management</h4>
+               <p class="text-muted small mb-0">Track real-time stock levels, warehouse shelves, and designated return store locations.</p>
+            </div>
+            
+            <div class="d-flex flex-wrap gap-3 align-items-center">
+               <!-- Selected Warehouse Option (Requested) -->
+               <div>
+                  <label class="fw-bold x-small text-muted text-uppercase mb-1 d-block">
+                     <i class="bi bi-building me-1 text-primary"></i> Selected Warehouse:
+                  </label>
+                  <select class="form-select form-select-sm border shadow-sm bg-white fw-bold" style="min-width: 220px;" v-model.number="selectedWarehouseID" @change="onWarehouseChange">
+                     <option :value="null">-- All Warehouses --</option>
+                     <option v-for="w in warehouses" :key="w.WarehouseID" :value="w.WarehouseID">{{ w.Name }}</option>
+                  </select>
+               </div>
+
+               <!-- Store Selector (Filtered by Warehouse) -->
+               <div>
+                  <label class="fw-bold x-small text-muted text-uppercase mb-1 d-block">
+                     <i class="bi bi-shop me-1 text-success"></i> Selected Store:
+                  </label>
+                  <select class="form-select form-select-sm border shadow-sm bg-white fw-bold" style="min-width: 220px;" v-model.number="selectedStoreID" @change="fetchStock">
+                     <option :value="null">-- All Stores in Warehouse --</option>
+                     <option v-for="s in filteredStores" :key="s.StoreID" :value="s.StoreID">
+                        {{ s.StoreName }} ({{ s.Type || 'Store' }})
+                     </option>
+                  </select>
+               </div>
+
+               <div class="pt-3">
+                  <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" @click="fetchStock">
+                     <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+                  </button>
+               </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Inventory Table -->
-      <div v-if="selectedStoreID" class="card border-0 shadow-sm overflow-hidden">
-        <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-           <div class="input-group w-50">
+      <div class="card border-0 shadow-sm overflow-hidden mb-5">
+        <div class="card-header bg-white border-bottom py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+           <div class="input-group" style="max-width: 400px;">
               <span class="input-group-text bg-light border-0"><i class="bi bi-search"></i></span>
-              <input type="text" class="form-control bg-light border-0" placeholder="Filter by product or SKU..." v-model="searchQuery">
+              <input type="text" class="form-control bg-light border-0" placeholder="Search by product, SKU, specs, shelf..." v-model="searchQuery">
            </div>
            <div class="text-muted small">
-              Showing {{ filteredGroups.length }} unique products
+              <span class="badge bg-primary me-2">{{ filteredStocks.length }} Records</span>
+              <span class="text-secondary"><i class="bi bi-info-circle me-1"></i> Click any row to inspect physical location & return store</span>
            </div>
         </div>
 
-        <div class="table-responsive">
-          <table class="table align-middle mb-0">
-            <thead class="bg-light text-muted small text-uppercase">
+        <div v-if="loading" class="text-center py-5">
+           <div class="spinner-border text-primary" role="status"></div>
+           <p class="text-muted mt-2">Loading stock levels...</p>
+        </div>
+
+        <div v-else class="table-responsive">
+          <table class="table align-middle mb-0 table-hover">
+            <thead class="bg-dark text-white small text-uppercase">
                <tr>
                   <th class="ps-4">Product & Specs</th>
+                  <th>Store</th>
                   <th>Shelf</th>
-                  <th>On Hand</th>
-                  <th>Reserved</th>
-                  <th>Available</th>
-                  <th class="text-end pe-4">Action</th>
+                  <th class="text-center">On Hand</th>
+                  <th class="text-center">Reserved</th>
+                  <th class="text-center">Available (Current Stock)</th>
+                  <th class="text-end pe-4">Locations & Return Store</th>
                </tr>
             </thead>
             <tbody>
-               <template v-for="group in filteredGroups" :key="group.ProductID">
-                  <!-- Product Row -->
-                  <tr class="bg-light-subtle">
-                     <td colspan="6" class="ps-4 py-2 border-start border-4 border-primary">
-                        <span class="fw-bold text-dark">{{ group.ProductName }}</span>
-                        <span class="badge bg-white text-dark border ms-2 small fw-normal">{{ group.variants.length }} items</span>
-                     </td>
-                  </tr>
-                  <!-- Variant Rows -->
-                  <tr v-for="s in group.variants" :key="s.VariantID">
-                     <td class="ps-5">
-                        <div class="fw-bold small">{{ s.variant.SKU }}</div>
-                        <div class="text-muted x-small" v-if="s.variant.Size || s.variant.Color">
-                           {{ s.variant.Size || '-' }} • {{ s.variant.Color || '-' }}
-                        </div>
-                     </td>
-                     <td>
-                        <input type="number" class="form-control form-control-sm border-0 bg-light text-center" style="width: 70px;" v-model="s.ShelfID" @change="markChanged(s)">
-                     </td>
-                     <td style="width: 150px;">
-                        <div class="input-group input-group-sm">
-                           <button class="btn btn-outline-secondary border-0 bg-light px-2" @click="adjust(s, -1)">-</button>
-                           <input type="number" class="form-control border-0 bg-light text-center fw-bold" v-model.number="s.OnHandQty" @change="markChanged(s)">
-                           <button class="btn btn-outline-secondary border-0 bg-light px-2" @click="adjust(s, 1)">+</button>
-                        </div>
-                     </td>
-                     <td>
-                        <span class="badge rounded-pill bg-light text-muted fw-normal">{{ s.ReservedQty || 0 }}</span>
-                     </td>
-                     <td>
-                        <span class="fw-bold" :class="s.OnHandQty > 0 ? 'text-success' : 'text-danger'">
-                           {{ (s.OnHandQty || 0) - (s.ReservedQty || 0) }}
-                        </span>
-                     </td>
-                     <td class="text-end pe-4">
-                        <button class="btn btn-sm" :class="isChanged(s) ? 'btn-primary shadow-sm' : 'btn-outline-light text-muted'" @click="saveStock(s)" :disabled="!isChanged(s) || saving === s.VariantID">
-                           <span v-if="saving === s.VariantID" class="spinner-border spinner-border-sm me-1"></span>
-                           <i v-else class="bi bi-cloud-arrow-up me-1"></i>
-                           {{ isChanged(s) ? 'Update' : 'Synced' }}
-                        </button>
-                     </td>
-                  </tr>
-               </template>
+               <tr v-for="s in filteredStocks" :key="s.StockID ? s.StockID : (s.StoreID + '-' + s.VariantID)" class="stock-row" @click="inspectStock(s)" title="Click to view where this stock is located & return store">
+                  <!-- Column 1: Product & Specs -->
+                  <td class="ps-4">
+                     <div class="fw-bold text-dark">{{ s.productName }}</div>
+                     <div class="small text-muted d-flex align-items-center gap-2 mt-1">
+                        <span class="badge bg-light text-dark border">SKU: {{ s.sku }}</span>
+                        <span v-if="s.specs" class="text-secondary fw-semibold">{{ s.specs }}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">{{ s.unit }}</span>
+                     </div>
+                  </td>
+
+                  <!-- Column 2: Store -->
+                  <td>
+                     <div class="fw-bold small text-dark">{{ s.storeName }}</div>
+                     <div class="x-small text-muted">{{ s.warehouseName }}</div>
+                     <span class="badge x-small" :class="s.storeType === 'Return' ? 'bg-danger text-white' : (s.storeType === 'Floor' ? 'bg-success text-white' : 'bg-secondary text-white')">
+                        {{ s.storeType || 'Store' }}
+                     </span>
+                  </td>
+
+                  <!-- Column 3: Shelf -->
+                  <td>
+                     <span class="badge bg-light text-primary border px-2 py-1 fw-bold fs-7">
+                        <i class="bi bi-geo-alt-fill me-1"></i> {{ s.shelfCode }}
+                     </span>
+                  </td>
+
+                  <!-- Column 4: On Hand -->
+                  <td class="text-center">
+                     <span class="fw-bold fs-6 text-dark">{{ s.OnHandQty || 0 }}</span>
+                  </td>
+
+                  <!-- Column 5: Reserved -->
+                  <td class="text-center">
+                     <span class="badge rounded-pill bg-light text-muted border px-2 py-1">{{ s.ReservedQty || 0 }}</span>
+                  </td>
+
+                  <!-- Column 6: Available (Current Stock) -->
+                  <td class="text-center">
+                     <span class="fw-bold fs-6" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
+                        {{ s.AvailableQty || 0 }}
+                     </span>
+                     <div class="x-small" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
+                        {{ s.AvailableQty > 0 ? 'In Stock' : 'Out of Stock' }}
+                     </div>
+                  </td>
+
+                  <!-- Column 7: Action / Inspect -->
+                  <td class="text-end pe-4" @click.stop>
+                     <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" @click="inspectStock(s)">
+                        <i class="bi bi-pin-map-fill me-1"></i> View Location
+                     </button>
+                  </td>
+               </tr>
+
+               <tr v-if="filteredStocks.length === 0">
+                  <td colspan="7" class="text-center py-5 text-muted">
+                     <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                     No inventory records found matching your filters.
+                  </td>
+               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Empty State -->
-      <div v-else class="text-center py-5">
-         <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-4" style="width: 100px; height: 100px;">
-            <i class="bi bi-shop display-4 text-muted opacity-50"></i>
-         </div>
-         <h5 class="fw-bold">No Store Selected</h5>
-         <p class="text-muted">Please select a store from the dropdown above to manage its stock levels.</p>
+      <!-- MODAL: Stock Location & Return Store Inspector -->
+      <div class="modal fade" id="stockLocationModal" tabindex="-1" ref="stockLocationModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content border-0 shadow" v-if="selectedStockItem">
+            <div class="modal-header bg-dark text-white">
+              <h5 class="modal-title fw-bold">
+                 <i class="bi bi-pin-map-fill text-primary me-2"></i> Stock Locations & Return Store
+              </h5>
+              <button type="button" class="btn-close btn-close-white" @click="closeLocationModal()"></button>
+            </div>
+            <div class="modal-body p-4">
+               <!-- Product Header Info -->
+               <div class="card bg-light border-0 p-3 mb-4">
+                  <div class="d-flex justify-content-between align-items-center">
+                     <div>
+                        <h5 class="fw-bold text-dark mb-1">{{ selectedStockItem.productName }}</h5>
+                        <div class="small text-muted">
+                           <strong>SKU:</strong> {{ selectedStockItem.sku }} | 
+                           <strong>Specs:</strong> {{ selectedStockItem.specs || 'Standard' }} | 
+                           <strong>UOM:</strong> {{ selectedStockItem.unit }}
+                        </div>
+                     </div>
+                     <div class="text-end">
+                        <div class="text-muted x-small text-uppercase fw-bold">Current Row Stock</div>
+                        <h4 class="fw-bold text-success mb-0">{{ selectedStockItem.AvailableQty || 0 }} Units</h4>
+                     </div>
+                  </div>
+               </div>
+
+               <!-- SECTION 1: KAHA PAR HAI STOCK (All Current Locations) -->
+               <div class="card border-0 shadow-sm location-card mb-4 p-3 bg-white">
+                  <h6 class="fw-bold text-primary mb-3">
+                     <i class="bi bi-geo-alt-fill me-1"></i> Kaha Par Hai Stock (Physical Locations)
+                  </h6>
+                  <div class="table-responsive">
+                     <table class="table table-sm align-middle table-bordered mb-0">
+                        <thead class="bg-light small">
+                           <tr>
+                              <th>Warehouse</th>
+                              <th>Store</th>
+                              <th>Shelf Code</th>
+                              <th class="text-center">On Hand</th>
+                              <th class="text-center">Available</th>
+                              <th>Type</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                           <tr v-for="(loc, idx) in itemLocations" :key="idx" :class="loc.StoreID === selectedStockItem.StoreID ? 'table-primary' : ''">
+                              <td class="fw-bold small">{{ loc.WarehouseName }}</td>
+                              <td class="small">{{ loc.StoreName }}</td>
+                              <td>
+                                 <span class="badge bg-light text-primary border fw-bold">{{ loc.ShelfCode }}</span>
+                              </td>
+                              <td class="text-center fw-bold">{{ loc.OnHandQty }}</td>
+                              <td class="text-center fw-bold" :class="loc.AvailableQty > 0 ? 'text-success' : 'text-danger'">
+                                 {{ loc.AvailableQty }}
+                              </td>
+                              <td>
+                                 <span v-if="loc.IsReturnStore" class="badge bg-danger text-white">Return Store</span>
+                                 <span v-else-if="loc.StoreType === 'Floor'" class="badge bg-success text-white">Floor Store</span>
+                                 <span v-else class="badge bg-secondary text-white">{{ loc.StoreType || 'Standard' }}</span>
+                                 <span v-if="loc.StoreID === selectedStockItem.StoreID" class="badge bg-primary ms-1">Current Row</span>
+                              </td>
+                           </tr>
+                           <tr v-if="itemLocations.length === 0">
+                              <td colspan="6" class="text-center py-3 text-muted small">
+                                 No other stock locations found for this item.
+                              </td>
+                           </tr>
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
+
+               <!-- SECTION 2: KOUNSA RETURN STORE HAI (Designated Return Store) -->
+               <div class="card border-0 shadow-sm return-card p-3">
+                  <h6 class="fw-bold text-danger mb-2">
+                     <i class="bi bi-arrow-return-left me-1"></i> Designated Return Store (Kounsa Return Store Hai)
+                  </h6>
+                  <p class="small text-muted mb-3">
+                     Any returned stock from customers or defective vendor items are stored in this warehouse's dedicated Return Store.
+                  </p>
+
+                  <div class="row g-3" v-if="selectedReturnStore">
+                     <div class="col-md-4">
+                        <div class="text-muted x-small text-uppercase fw-bold">Return Store Name</div>
+                        <div class="fw-bold text-dark mt-1">
+                           <i class="bi bi-shop me-1 text-danger"></i> {{ selectedReturnStore.StoreName }}
+                        </div>
+                        <div class="x-small text-muted">{{ selectedReturnStore.WarehouseName }}</div>
+                     </div>
+                     <div class="col-md-4">
+                        <div class="text-muted x-small text-uppercase fw-bold">Return Shelf Location</div>
+                        <div class="mt-1">
+                           <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 fw-bold fs-7">
+                              <i class="bi bi-geo-alt-fill me-1"></i> {{ selectedReturnStore.ShelfCode || 'RT01' }}
+                           </span>
+                        </div>
+                     </div>
+                     <div class="col-md-4">
+                        <div class="text-muted x-small text-uppercase fw-bold">Current Stock in Return Store</div>
+                        <div class="fw-bold fs-5 mt-1" :class="selectedReturnStore.ReturnStockQty > 0 ? 'text-danger' : 'text-success'">
+                           {{ selectedReturnStore.ReturnStockQty || 0 }} Units
+                        </div>
+                        <div class="x-small text-muted">
+                           {{ selectedReturnStore.ReturnStockQty > 0 ? '⚠️ Has pending returned units' : '✅ No returned units in storage' }}
+                        </div>
+                     </div>
+                  </div>
+                  <div v-else class="text-muted small">
+                     No Return Store configured for this warehouse yet.
+                  </div>
+               </div>
+            </div>
+            <div class="modal-footer bg-light">
+              <button type="button" class="btn btn-secondary fw-bold" @click="closeLocationModal()">Close</button>
+            </div>
+          </div>
+        </div>
       </div>
+
     </div>
   `,
   data() {
     return {
+      warehouses: [],
       stores: [],
+      selectedWarehouseID: null,
       selectedStoreID: null,
-      stocks: [], // Flat list of stock items
-      productsFlattened: [],
+      stocks: [],
       searchQuery: '',
-      changedItems: new Set(),
       loading: false,
-      saving: null // VariantID of item being saved
+      
+      // Modal
+      selectedStockItem: null,
+      itemLocations: [],
+      selectedReturnStore: null,
+      locationModalInstance: null
     };
   },
   computed: {
-    filteredGroups() {
-      // 1. Group stocks by product
-      const groups = {};
-      this.stocks.forEach(s => {
-        const p = this.productsFlattened.find(prod => prod.ProductID === s.variant.ProductID) || { ProductName: 'Unnamed Product', ProductID: s.variant.ProductID };
-        
-        // Search Filter
-        constMatches = !this.searchQuery || 
-                       p.ProductName.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
-                       s.variant.SKU.toLowerCase().includes(this.searchQuery.toLowerCase());
-        
-        if (constMatches) {
-          if (!groups[p.ProductID]) {
-            groups[p.ProductID] = { ...p, variants: [] };
-          }
-          groups[p.ProductID].variants.push(s);
-        }
+    filteredStores() {
+      if (!this.selectedWarehouseID) return this.stores;
+      return this.stores.filter(s => s.WarehouseID === this.selectedWarehouseID);
+    },
+    filteredStocks() {
+      return this.stocks.filter(s => {
+        // Warehouse filter
+        if (this.selectedWarehouseID && s.warehouseId !== this.selectedWarehouseID) return false;
+        // Store filter
+        if (this.selectedStoreID && s.StoreID !== this.selectedStoreID) return false;
+
+        // Search query filter
+        if (!this.searchQuery) return true;
+        const q = this.searchQuery.toLowerCase();
+        return (s.productName || '').toLowerCase().includes(q) ||
+               (s.sku || '').toLowerCase().includes(q) ||
+               (s.specs || '').toLowerCase().includes(q) ||
+               (s.storeName || '').toLowerCase().includes(q) ||
+               (s.shelfCode || '').toLowerCase().includes(q);
       });
-      return Object.values(groups).sort((a, b) => a.ProductName.localeCompare(b.ProductName));
     }
   },
-  mounted() {
-    this.init();
+  async mounted() {
+    if (this.$refs.stockLocationModal) {
+      this.locationModalInstance = new bootstrap.Modal(this.$refs.stockLocationModal);
+    }
+    await this.init();
   },
   methods: {
     async init() {
-       const query = `{
-          allStores { StoreID StoreName }
-          allProducts { ProductID ProductName }
-       }`;
-       try {
-          const data = await graphqlRequest(query, {}, localStorage.getItem('token'));
-          this.stores = data.allStores;
-          this.productsFlattened = data.allProducts;
-          if (this.stores.length > 0) {
-             this.selectedStoreID = this.stores[0].StoreID;
-             this.fetchStock();
-          }
-       } catch (e) { console.error(e); }
+      const token = localStorage.getItem('token');
+      try {
+        const q = `{
+          allWarehouses { WarehouseID Name }
+          allStores { StoreID StoreName Type WarehouseID }
+        }`;
+        const data = await graphqlRequest(q, {}, token);
+        this.warehouses = data.allWarehouses || [];
+        this.stores = data.allStores || [];
+        
+        // Default to first warehouse if available
+        if (this.warehouses.length > 0) {
+          this.selectedWarehouseID = this.warehouses[0].WarehouseID;
+        }
+        await this.fetchStock();
+      } catch (e) {
+        console.error("Error initializing inventory:", e);
+      }
+    },
+    onWarehouseChange() {
+      this.selectedStoreID = null;
+      this.fetchStock();
     },
     async fetchStock() {
-       if (!this.selectedStoreID) return;
-       this.loading = true;
-       const query = `query($sid: Int!) {
-          allStocks(StoreID: $sid) {
-             StockID StoreID VariantID ShelfID OnHandQty ReservedQty AvailableQty
-             variant { VariantID ProductID SKU Size Color }
+      this.loading = true;
+      const token = localStorage.getItem('token');
+      const query = `query($wid: Int, $sid: Int) {
+        allStocks(WarehouseID: $wid, StoreID: $sid) {
+          StockID StoreID VariantID ShelfID OnHandQty ReservedQty AvailableQty
+          WarehouseID WarehouseName StoreName StoreType ShelfCode
+          variant {
+            VariantID ProductID SKU Size Color Unit MRP
+            product { ProductID ProductName }
           }
-       }`;
-       try {
-          const data = await graphqlRequest(query, { sid: this.selectedStoreID }, localStorage.getItem('token'));
-          this.stocks = data.allStocks;
-          this.changedItems.clear();
-       } catch (e) { console.error(e); }
-       finally { this.loading = false; }
-    },
-    markChanged(s) {
-       this.changedItems.add(s.VariantID);
-       this.$forceUpdate();
-    },
-    isChanged(s) {
-       return this.changedItems.has(s.VariantID);
-    },
-    adjust(s, val) {
-       s.OnHandQty = Math.max(0, (s.OnHandQty || 0) + val);
-       this.markChanged(s);
-    },
-    async saveStock(s) {
-       this.saving = s.VariantID;
-       const mutation = `mutation($sid: Int!, $vid: Int!, $qty: Int!, $shelf: Int) {
-          updateStock(StoreID: $sid, VariantID: $vid, OnHandQty: $qty, ShelfID: $shelf) {
-             StockID OnHandQty AvailableQty
+          ReturnStore {
+            StoreID StoreName WarehouseID WarehouseName ShelfID ShelfCode ReturnStockQty
           }
-       }`;
-       try {
-          await graphqlRequest(mutation, {
-             sid: this.selectedStoreID,
-             vid: s.VariantID,
-             qty: parseInt(s.OnHandQty),
-             shelf: parseInt(s.ShelfID)
-          }, localStorage.getItem('token'));
-          this.changedItems.delete(s.VariantID);
-          this.$forceUpdate();
-       } catch (e) { 
-          alert('Error updating stock: ' + e.message); 
-       } finally { 
-          this.saving = null; 
-       }
+          AllLocations {
+            WarehouseID WarehouseName StoreID StoreName StoreType ShelfID ShelfCode OnHandQty AvailableQty ReservedQty IsReturnStore
+          }
+        }
+      }`;
+      try {
+        const res = await graphqlRequest(query, {
+          wid: this.selectedWarehouseID || null,
+          sid: this.selectedStoreID || null
+        }, token);
+
+        const raw = res.allStocks || [];
+        this.stocks = raw.map(s => {
+          const v = s.variant || {};
+          const p = v.product || {};
+          const specsParts = [];
+          if (v.Size) specsParts.push(v.Size);
+          if (v.Color) specsParts.push(v.Color);
+          
+          return {
+            StockID: s.StockID,
+            StoreID: s.StoreID,
+            VariantID: s.VariantID,
+            ShelfID: s.ShelfID,
+            OnHandQty: s.OnHandQty || 0,
+            ReservedQty: s.ReservedQty || 0,
+            AvailableQty: s.AvailableQty || 0,
+            warehouseId: s.WarehouseID,
+            warehouseName: s.WarehouseName || 'Main Hub',
+            storeName: s.StoreName || 'Store',
+            storeType: s.StoreType || 'Standard',
+            shelfCode: s.ShelfCode || 'FL01',
+            productName: p.ProductName || 'Unnamed Product',
+            sku: v.SKU || ('VAR-' + s.VariantID),
+            specs: specsParts.join(' • '),
+            unit: v.Unit || 'PCS',
+            returnStore: s.ReturnStore,
+            allLocations: s.AllLocations || []
+          };
+        });
+      } catch (e) {
+        console.error("Error fetching stock:", e);
+      } finally {
+        this.loading = false;
+      }
+    },
+    inspectStock(s) {
+      this.selectedStockItem = s;
+      this.itemLocations = s.allLocations && s.allLocations.length > 0 ? s.allLocations : [{
+        WarehouseName: s.warehouseName,
+        StoreName: s.storeName,
+        StoreType: s.storeType,
+        ShelfCode: s.shelfCode,
+        OnHandQty: s.OnHandQty,
+        AvailableQty: s.AvailableQty,
+        ReservedQty: s.ReservedQty,
+        IsReturnStore: (s.storeType || '').toLowerCase() === 'return',
+        StoreID: s.StoreID
+      }];
+      this.selectedReturnStore = s.returnStore;
+      if (this.locationModalInstance) {
+        this.locationModalInstance.show();
+      }
+    },
+    closeLocationModal() {
+      if (this.locationModalInstance) {
+        this.locationModalInstance.hide();
+      }
     }
   }
 };

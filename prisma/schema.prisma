@@ -329,15 +329,17 @@ model Stocks {
 }
 
 model StockMovements {
-  MovementID  Int       @id @default(autoincrement())
-  VariantID   Int
-  FromStoreID Int
-  ToStoreID   Int
-  FromShelf   String?
-  ToShelf     String?
-  Qty         Int?
-  Type        String?
-  Date        DateTime?
+  MovementID    Int       @id @default(autoincrement())
+  VariantID     Int
+  FromStoreID   Int
+  ToStoreID     Int
+  FromShelf     String?
+  ToShelf       String?
+  Qty           Int?
+  Type          String?
+  Date          DateTime?
+  CreatedBy     Int?
+  CreatedByName String?
 }
 
 model InventorySnapshots {

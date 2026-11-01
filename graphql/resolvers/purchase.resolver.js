@@ -349,7 +349,9 @@ const purchaseResolvers = {
             ToShelf: shelf.ShelfCode || 'FL01',
             Qty: qty,
             Type: 'GRN_RECEIVED',
-            Date: receivedAt
+            Date: receivedAt,
+            CreatedBy: receiverId,
+            CreatedByName: receiverName
           }
         });
       }
@@ -444,7 +446,9 @@ const purchaseResolvers = {
             ToShelf: shelf.ShelfCode || 'FL01',
             Qty: qty,
             Type: 'DIRECT_PURCHASE_GRN',
-            Date: receivedAt
+            Date: receivedAt,
+            CreatedBy: receiverId,
+            CreatedByName: receiverName
           }
         });
       }
@@ -527,6 +531,7 @@ const purchaseResolvers = {
         await deductStockFromShelf(store.StoreID, shelf.ShelfID, parseInt(item.VariantID), qty);
 
         // Record stock movement
+        const returnOfficerName = `${user.UserNameFirst || ''} ${user.UserNameLast || ''}`.trim() || 'Store Incharge';
         await prisma.stockMovements.create({
           data: {
             VariantID: parseInt(item.VariantID),
@@ -536,7 +541,9 @@ const purchaseResolvers = {
             ToShelf: 'VENDOR_RETURN',
             Qty: qty,
             Type: 'PURCHASE_RETURN',
-            Date: new Date()
+            Date: new Date(),
+            CreatedBy: user.UserID,
+            CreatedByName: returnOfficerName
           }
         });
       }

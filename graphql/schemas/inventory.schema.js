@@ -1,4 +1,28 @@
 const inventorySchema = `#graphql
+  type StockLocation {
+    WarehouseID: Int
+    WarehouseName: String
+    StoreID: Int
+    StoreName: String
+    StoreType: String
+    ShelfID: Int
+    ShelfCode: String
+    OnHandQty: Int
+    AvailableQty: Int
+    ReservedQty: Int
+    IsReturnStore: Boolean
+  }
+
+  type ReturnStoreInfo {
+    StoreID: Int
+    StoreName: String
+    WarehouseID: Int
+    WarehouseName: String
+    ShelfID: Int
+    ShelfCode: String
+    ReturnStockQty: Int
+  }
+
   type Stock {
     StockID: Int!
     StoreID: Int!
@@ -9,11 +33,21 @@ const inventorySchema = `#graphql
     AvailableQty: Int
     variant: Variant
     store: Stores
+
+    WarehouseID: Int
+    WarehouseName: String
+    StoreName: String
+    StoreType: String
+    ShelfCode: String
+    ReturnStore: ReturnStoreInfo
+    AllLocations: [StockLocation]
   }
 
   extend type Query {
-    allStocks(StoreID: Int!): [Stock]
+    allStocks(WarehouseID: Int, StoreID: Int): [Stock]
     stock(StockID: Int!): Stock
+    variantLocations(VariantID: Int!, WarehouseID: Int): [StockLocation]
+    returnStoreInfo(WarehouseID: Int!, VariantID: Int): ReturnStoreInfo
   }
 
   extend type Mutation {

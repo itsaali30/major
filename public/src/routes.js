@@ -25,6 +25,7 @@ const routes = [
   { path: '/admin/merchants/:MerchantID/ledger', component: AdminMerchantLedger, meta: { title: 'Merchant Ledger' } },
   { path: '/admin/catalog', component: AdminCatalog, meta: { title: 'Product Catalog' } },
   { path: '/admin/inventory', component: AdminInventory, meta: { title: 'Stock Management' } },
+  { path: '/admin/stockmanagement', component: AdminInventory, meta: { title: 'Stock Management' } },
   { path: '/admin/purchase/:section?', component: AdminPurchase, meta: { title: 'Purchase Management' } }
 ];
 
