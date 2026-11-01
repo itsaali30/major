@@ -10,6 +10,13 @@ const AdminMerchantLedger = {
           transform: translateY(-2px);
           box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
         }
+        .ledger-row {
+          cursor: pointer;
+          transition: background-color 0.15s ease-in-out;
+        }
+        .ledger-row:hover {
+          background-color: #f1f5f9 !important;
+        }
         .type-purchase { color: #dc3545; font-weight: bold; }
         .type-payment { color: #198754; font-weight: bold; }
         .type-return { color: #0d6efd; font-weight: bold; }
@@ -142,11 +149,11 @@ const AdminMerchantLedger = {
                   <th class="text-end">Balance Due</th>
                   <th class="ps-3">Remarks / Notes</th>
                   <!-- WhatsApp Send Invoice Button Column (Requested) -->
-                  <th class="text-end pe-4">WhatsApp Invoice</th>
+                  <th class="text-end pe-4">Actions / Invoice</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="entry in ledger.Entries" :key="entry.LedgerID">
+                <tr v-for="entry in ledger.Entries" :key="entry.LedgerID" class="ledger-row" @click="viewEntryDetails(entry)" title="Click row to view item details & receipt">
                   <!-- Date & Time -->
                   <td class="ps-4">
                     <div class="fw-bold small">{{ formatDate(entry.Date) }}</div>
@@ -162,9 +169,15 @@ const AdminMerchantLedger = {
 
                   <!-- Ref # -->
                   <td>
-                    <span class="small fw-semibold text-secondary">
-                      {{ entry.ReferenceID ? ('REF-' + entry.ReferenceID) : 'N/A' }}
-                    </span>
+                    <div class="small fw-bold text-primary">
+                      {{ entry.ReferenceNumber || (entry.ReferenceID ? ('REF-' + entry.ReferenceID) : 'N/A') }}
+                    </div>
+                    <div class="badge bg-light text-secondary border x-small mt-1" v-if="entry.Items && entry.Items.length">
+                       <i class="bi bi-box-seam me-1 text-primary"></i>{{ entry.Items.length }} {{ entry.Items.length === 1 ? 'item' : 'items' }}
+                    </div>
+                    <div class="x-small text-muted" v-if="entry.WarehouseName">
+                       <i class="bi bi-geo-alt me-1"></i>{{ entry.WarehouseName }}
+                    </div>
                   </td>
 
                   <!-- Payment Mode -->
@@ -204,11 +217,16 @@ const AdminMerchantLedger = {
                     {{ entry.Notes || '-' }}
                   </td>
 
-                  <!-- 5. WhatsApp Send Invoice Button (Requested) -->
-                  <td class="text-end pe-4">
-                     <button class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" @click="sendWhatsAppInvoice(entry)" title="Send Invoice to Merchant on WhatsApp">
-                        <i class="bi bi-whatsapp me-1"></i> Send Invoice
-                     </button>
+                  <!-- 5. Actions: View Items & WhatsApp Button -->
+                  <td class="text-end pe-4" @click.stop>
+                     <div class="d-inline-flex gap-2">
+                        <button class="btn btn-sm btn-outline-info fw-bold shadow-sm" @click="viewEntryDetails(entry)" title="View item breakdown">
+                           <i class="bi bi-eye me-1"></i> View ({{ (entry.Items || []).length }})
+                        </button>
+                        <button class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" @click="sendWhatsAppInvoice(entry)" title="Send Invoice to Merchant on WhatsApp">
+                           <i class="bi bi-whatsapp me-1"></i> Send Invoice
+                        </button>
+                     </div>
                   </td>
                 </tr>
 
@@ -220,6 +238,126 @@ const AdminMerchantLedger = {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item Details & Transaction Breakdown Modal -->
+      <div class="modal fade" id="itemDetailsModal" tabindex="-1" ref="itemDetailsModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content border-0 shadow-lg" v-if="selectedEntry">
+            <div class="modal-header border-0 py-3" :class="modalHeaderClass(selectedEntry.Type)">
+              <div class="d-flex align-items-center">
+                <i class="bi fs-4 me-2 text-white" :class="modalHeaderIcon(selectedEntry.Type)"></i>
+                <div>
+                   <h5 class="modal-title fw-bold mb-0 text-white">
+                      {{ (selectedEntry.Type || 'TRANSACTION').toUpperCase() }} Details
+                   </h5>
+                   <div class="text-white-50 x-small">
+                      Ref: {{ selectedEntry.ReferenceNumber || ('REF-' + selectedEntry.ReferenceID) }} | {{ formatDate(selectedEntry.Date) }} {{ formatTime(selectedEntry.Date) }}
+                   </div>
+                </div>
+              </div>
+              <button type="button" class="btn-close btn-close-white" @click="closeItemDetailsModal"></button>
+            </div>
+            <div class="modal-body p-4 bg-light-subtle">
+               <!-- Info Summary Card -->
+               <div class="card border-0 shadow-sm bg-white p-3 mb-3">
+                  <div class="row g-3">
+                     <div class="col-md-3 col-6">
+                        <div class="text-muted x-small text-uppercase fw-bold">Merchant</div>
+                        <div class="fw-bold text-dark small">{{ ledger ? ledger.MerchantName : 'N/A' }}</div>
+                     </div>
+                     <div class="col-md-3 col-6">
+                        <div class="text-muted x-small text-uppercase fw-bold">Payment Mode</div>
+                        <div class="mt-1">
+                           <span class="badge text-uppercase" :class="(selectedEntry.PaymentMode || 'credit').toLowerCase() === 'cash' ? 'bg-success text-white' : 'bg-secondary text-white'">
+                              {{ selectedEntry.PaymentMode || 'CREDIT' }}
+                           </span>
+                        </div>
+                     </div>
+                     <div class="col-md-3 col-6">
+                        <div class="text-muted x-small text-uppercase fw-bold">Warehouse</div>
+                        <div class="fw-bold text-primary small">{{ selectedEntry.WarehouseName || 'Main Warehouse' }}</div>
+                     </div>
+                     <div class="col-md-3 col-6">
+                        <div class="text-muted x-small text-uppercase fw-bold">Total Amount</div>
+                        <div class="fw-bold fs-6" :class="selectedEntry.Type === 'PURCHASE' ? 'text-danger' : (selectedEntry.Type === 'RETURN' ? 'text-primary' : 'text-success')">
+                           ₹{{ Number(selectedEntry.Amount || 0).toFixed(2) }}
+                        </div>
+                     </div>
+                     <div class="col-12 mt-2 pt-2 border-top" v-if="selectedEntry.Notes">
+                        <div class="text-muted x-small text-uppercase fw-bold">Remarks / Notes</div>
+                        <div class="small text-secondary">{{ selectedEntry.Notes }}</div>
+                     </div>
+                     <div class="col-12" v-if="selectedEntry.OfficerName">
+                        <div class="text-muted x-small text-uppercase fw-bold">Officer / Handled By</div>
+                        <div class="small fw-semibold text-dark"><i class="bi bi-person-badge text-primary me-1"></i>{{ selectedEntry.OfficerName }}</div>
+                     </div>
+                  </div>
+               </div>
+
+               <!-- Item Breakdown Section -->
+               <div class="card border-0 shadow-sm bg-white overflow-hidden">
+                  <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                     <div class="fw-bold small text-dark">
+                        <i class="bi bi-box-seam text-primary me-2"></i> Itemized Breakdown ({{ (selectedEntry.Items || []).length }} Items)
+                     </div>
+                     <span class="badge bg-light text-dark border small">
+                        Total Value: ₹{{ Number(selectedEntry.Amount || 0).toFixed(2) }}
+                     </span>
+                  </div>
+                  <div class="table-responsive" v-if="selectedEntry.Items && selectedEntry.Items.length > 0">
+                     <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light small text-uppercase">
+                           <tr>
+                              <th class="ps-3" style="width: 50px;">#</th>
+                              <th>Product & Specifications</th>
+                              <th class="text-center" style="width: 90px;">Qty</th>
+                              <th class="text-center" style="width: 80px;">UOM</th>
+                              <th class="text-end" style="width: 120px;">Unit Rate</th>
+                              <th class="text-end pe-3" style="width: 130px;">Subtotal</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                           <tr v-for="(item, idx) in selectedEntry.Items" :key="idx">
+                              <td class="ps-3 text-muted small">{{ idx + 1 }}</td>
+                              <td>
+                                 <div class="fw-bold small text-dark">{{ item.VariantName }}</div>
+                                 <div class="x-small text-muted" v-if="item.Reason">
+                                    <i class="bi bi-info-circle me-1 text-warning"></i> Reason: {{ item.Reason }}
+                                 </div>
+                              </td>
+                              <td class="text-center fw-bold">{{ item.Qty }}</td>
+                              <td class="text-center small text-muted">{{ item.UOM || 'pcs' }}</td>
+                              <td class="text-end small">₹{{ Number(item.Price || 0).toFixed(2) }}</td>
+                              <td class="text-end pe-3 fw-bold" :class="selectedEntry.Type === 'PURCHASE' ? 'text-danger' : (selectedEntry.Type === 'RETURN' ? 'text-primary' : 'text-success')">
+                                 ₹{{ Number(item.Subtotal || (item.Qty * item.Price) || 0).toFixed(2) }}
+                              </td>
+                           </tr>
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                           <tr>
+                              <td colspan="5" class="text-end small">Grand Total:</td>
+                              <td class="text-end pe-3 fs-6" :class="selectedEntry.Type === 'PURCHASE' ? 'text-danger' : (selectedEntry.Type === 'RETURN' ? 'text-primary' : 'text-success')">
+                                 ₹{{ Number(selectedEntry.Amount || 0).toFixed(2) }}
+                              </td>
+                           </tr>
+                        </tfoot>
+                     </table>
+                  </div>
+                  <div v-else class="text-center py-4 text-muted small">
+                     <i class="bi bi-receipt fs-2 opacity-50 d-block mb-1"></i>
+                     <span>Direct Payment / Financial adjustment entry without specific item records.</span>
+                  </div>
+               </div>
+            </div>
+            <div class="modal-footer bg-white border-0 py-3 d-flex justify-content-between">
+               <button type="button" class="btn btn-outline-success fw-bold shadow-sm" @click="sendWhatsAppInvoice(selectedEntry)">
+                  <i class="bi bi-whatsapp me-1"></i> Send Invoice on WhatsApp
+               </button>
+               <button type="button" class="btn btn-secondary px-4 fw-bold" @click="closeItemDetailsModal">Close</button>
+            </div>
           </div>
         </div>
       </div>
@@ -285,6 +423,8 @@ const AdminMerchantLedger = {
       error: null,
       savingPayment: false,
       paymentModalInstance: null,
+      selectedEntry: null,
+      itemDetailsModalInstance: null,
       paymentForm: {
         Amount: null,
         PaymentMode: 'cash',
@@ -296,6 +436,9 @@ const AdminMerchantLedger = {
   mounted() {
     if (this.$refs.paymentModal) {
       this.paymentModalInstance = new bootstrap.Modal(this.$refs.paymentModal);
+    }
+    if (this.$refs.itemDetailsModal) {
+      this.itemDetailsModalInstance = new bootstrap.Modal(this.$refs.itemDetailsModal);
     }
     this.fetchLedger();
   },
@@ -337,6 +480,19 @@ const AdminMerchantLedger = {
             PaymentMode
             Notes
             CreatedBy
+            ReferenceNumber
+            WarehouseName
+            OfficerName
+            Items {
+              ItemID
+              VariantID
+              VariantName
+              Qty
+              Price
+              Subtotal
+              UOM
+              Reason
+            }
           }
         }
       }`;
@@ -413,6 +569,13 @@ const AdminMerchantLedger = {
 
       message += `📋 *Description:* ${notes}\n`;
       message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      if (entry.Items && entry.Items.length > 0) {
+        message += `📦 *ITEMS DETAIL:*\n`;
+        entry.Items.forEach((it, i) => {
+          message += `${i+1}. ${it.VariantName} x ${it.Qty} @ ₹${Number(it.Price || 0).toFixed(2)} = ₹${Number(it.Subtotal || (it.Qty * it.Price) || 0).toFixed(2)}\n`;
+        });
+        message += `━━━━━━━━━━━━━━━━━━━━\n`;
+      }
       message += `📊 *ACCOUNT BALANCE SUMMARY:*\n`;
       message += `• Total Billed Purchases: ₹${Number(this.ledger.TotalPurchases || 0).toFixed(2)}\n`;
       message += `• Total Settled Payments: ₹${Number(this.ledger.TotalPaid || 0).toFixed(2)}\n`;
@@ -519,6 +682,31 @@ const AdminMerchantLedger = {
       } finally {
         this.savingPayment = false;
       }
+    },
+    viewEntryDetails(entry) {
+      this.selectedEntry = entry;
+      if (this.itemDetailsModalInstance) {
+        this.itemDetailsModalInstance.show();
+      }
+    },
+    closeItemDetailsModal() {
+      if (this.itemDetailsModalInstance) {
+        this.itemDetailsModalInstance.hide();
+      }
+    },
+    modalHeaderClass(type) {
+      const t = (type || '').toUpperCase();
+      if (t === 'PURCHASE' || t === 'INVOICE') return 'bg-danger text-white';
+      if (t === 'RETURN') return 'bg-primary text-white';
+      if (t === 'PAYMENT') return 'bg-success text-white';
+      return 'bg-dark text-white';
+    },
+    modalHeaderIcon(type) {
+      const t = (type || '').toUpperCase();
+      if (t === 'PURCHASE' || t === 'INVOICE') return 'bi-box-arrow-in-down';
+      if (t === 'RETURN') return 'bi-arrow-return-left';
+      if (t === 'PAYMENT') return 'bi-cash-coin';
+      return 'bi-receipt';
     },
     formatDate(d) {
       if (!d) return 'N/A';

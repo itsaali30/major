@@ -20,6 +20,17 @@ const merchantSchema = `#graphql
     Role: String
   }
 
+  type MerchantLedgerItem {
+    ItemID: Int
+    VariantID: Int
+    VariantName: String
+    Qty: Float
+    Price: Float
+    Subtotal: Float
+    UOM: String
+    Reason: String
+  }
+
   type MerchantLedgerEntry {
     LedgerID: Int!
     MerchantID: Int!
@@ -31,6 +42,10 @@ const merchantSchema = `#graphql
     PaymentMode: String
     Notes: String
     CreatedBy: Int
+    ReferenceNumber: String
+    WarehouseName: String
+    OfficerName: String
+    Items: [MerchantLedgerItem]
   }
 
   type MerchantLedgerSummary {
