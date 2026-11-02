@@ -4,3 +4,7 @@ node_modules/
 # Environment Variables & Secrets (CRITICAL)
 .env
 .env.local
+
+# External tools & sub-clones
+agency-agents/
+

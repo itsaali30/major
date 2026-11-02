@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WMS - Pick & Pack Handheld System</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Bootstrap Icons CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Socket.io Client CDN -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- HTML5 QR / Barcode Scanner CDN -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="manifest" href="/manifest.json">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased select-none">
+  <div id="app" v-cloak class="max-w-md md:max-w-4xl mx-auto min-h-screen flex flex-col bg-slate-900 border-x border-slate-800 shadow-2xl relative pb-20">
+
+    <!-- Top Status & Header -->
+    <header class="bg-slate-950 border-b border-slate-800 p-3 sticky top-0 z-50">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-lg border border-amber-500/30">
+            <i class="bi bi-boxes"></i>
+          </div>
+          <div>
+            <h1 class="text-sm font-black tracking-wider uppercase flex items-center gap-1.5 text-white">
+              WMS Core <span class="text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-bold">PDA</span>
+            </h1>
+            <p class="text-[11px] text-slate-400 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full" :class="isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'"></span>
+              {{ isSocketConnected ? 'Live Real-Time Sync' : 'Connecting...' }}
+            </p>
+          </div>
+        </div>
+
+        <div v-if="isLoggedIn" class="flex items-center gap-2">
+          <!-- Role Badge -->
+          <div class="text-right">
+            <div class="text-xs font-bold text-slate-200 capitalize leading-tight">{{ user.name }}</div>
+            <span class="text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase"
+              :class="getRoleBadgeClass(user.role)">
+              {{ user.role }}
+            </span>
+          </div>
+
+          <button @click="logout" class="w-8 h-8 rounded bg-slate-800 text-slate-400 hover:text-rose-400 flex items-center justify-center text-sm border border-slate-700">
+            <i class="bi bi-box-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Attendance & Duty Controls (When Logged In) -->
+      <div v-if="isLoggedIn" class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2">
+        <!-- Punch In / Out Button -->
+        <div class="flex items-center gap-1.5">
+          <button v-if="duty.duty === 'OFF'" @click="openPunchInModal" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition">
+            <i class="bi bi-fingerprint text-sm"></i> Punch In
+          </button>
+          <button v-else @click="punchOut" class="bg-rose-600/80 hover:bg-rose-500 text-white font-bold px-2.5 py-1.5 rounded-md flex items-center gap-1 transition">
+            <i class="bi bi-box-arrow-left"></i> Punch Out
+          </button>
+
+          <!-- Break Toggle -->
+          <button v-if="duty.duty === 'ON'" @click="toggleBreak" class="px-2.5 py-1.5 rounded-md font-bold transition flex items-center gap-1 border"
+            :class="duty.onBreak ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-amber-400 border-slate-700'">
+            <i :class="duty.onBreak ? 'bi bi-play-circle-fill' : 'bi bi-cup-hot-fill'"></i>
+            {{ duty.onBreak ? 'Resume Duty' : 'Take Break' }}
+          </button>
+        </div>
+
+        <!-- Duty Toggle Switch -->
+        <div class="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
+          <span class="text-[11px] font-bold uppercase tracking-wider" :class="duty.duty === 'ON' ? 'text-emerald-400' : 'text-slate-500'">
+            {{ duty.duty === 'ON' ? 'Duty ON' : 'Duty OFF' }}
+          </span>
+          <button @click="toggleDuty" class="w-10 h-5 rounded-full transition relative border"
+            :class="duty.duty === 'ON' ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-700 border-slate-600'">
+            <span class="w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition"
+              :class="duty.duty === 'ON' ? 'right-0.5' : 'left-0.5'"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 p-3">
+
+      <!-- ==================== LOGIN VIEW ==================== -->
+      <section v-if="!isLoggedIn" class="pt-6 pb-12 flex flex-col items-center">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center text-3xl font-black mb-4 shadow-xl shadow-amber-500/20">
+          <i class="bi bi-upc-scan"></i>
+        </div>
+        <h2 class="text-xl font-black text-white tracking-wide">Warehouse Terminal Login</h2>
+        <p class="text-xs text-slate-400 mb-6 text-center">Scan Badge or enter staff credentials to access role dashboard</p>
+
+        <form @submit.prevent="login" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Mobile or Email</label>
+            <div class="relative">
+              <i class="bi bi-person absolute left-3 top-2.5 text-slate-500"></i>
+              <input v-model="loginForm.login" type="text" required placeholder="e.g. 9985699757 or picker@store.com"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 font-mono">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Password</label>
+            <div class="relative">
+              <i class="bi bi-key absolute left-3 top-2.5 text-slate-500"></i>
+              <input v-model="loginForm.password" type="password" required placeholder="••••••••"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 font-mono">
+            </div>
+          </div>
+
+          <div v-if="loginError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>{{ loginError }}</span>
+          </div>
+
+          <button type="submit" :disabled="isLoggingIn"
+            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-sm uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20">
+            <span v-if="isLoggingIn" class="animate-spin text-lg"><i class="bi bi-arrow-repeat"></i></span>
+            <span v-else><i class="bi bi-box-arrow-in-right"></i> Punch In & Access PDA</span>
+          </button>
+
+          <!-- Quick Role Demo Switcher -->
+          <div class="pt-3 border-t border-slate-800/80">
+            <p class="text-[11px] text-slate-500 font-bold uppercase mb-2 text-center">Quick Switch Role (Testing)</p>
+            <div class="grid grid-cols-2 gap-1.5 text-xs">
+              <button type="button" @click="quickLogin('picker')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-amber-400 font-semibold flex items-center justify-center gap-1">
+                <i class="bi bi-hand-index-thumb"></i> 1. Picker
+              </button>
+              <button type="button" @click="quickLogin('putter')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-cyan-400 font-semibold flex items-center justify-center gap-1">
+                <i class="bi bi-box-seam"></i> 2. Put-away
+              </button>
+              <button type="button" @click="quickLogin('inward')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-emerald-400 font-semibold flex items-center justify-center gap-1">
+                <i class="bi bi-truck"></i> 3. Inward
+              </button>
+              <button type="button" @click="quickLogin('packer')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-purple-400 font-semibold flex items-center justify-center gap-1">
+                <i class="bi bi-bag-check"></i> 4. Packer
+              </button>
+              <button type="button" @click="quickLogin('manager')" class="col-span-2 p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-rose-400 font-bold flex items-center justify-center gap-1">
+                <i class="bi bi-shield-lock"></i> 5. Warehouse Manager / Supervisor
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- ==================== DASHBOARD WHEN LOGGED IN ==================== -->
+      <section v-else class="space-y-3">
+
+        <!-- Role Nav Tabs -->
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto text-xs font-bold scrollbar-none">
+          <button v-if="canAccess('picker')" @click="currentTab = 'picker'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'picker' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-hand-index-thumb"></i> Picker
+          </button>
+          <button v-if="canAccess('putter')" @click="currentTab = 'putter'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'putter' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-box-seam"></i> Put-away
+          </button>
+          <button v-if="canAccess('inward')" @click="currentTab = 'inward'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'inward' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-truck"></i> Inward
+          </button>
+          <button v-if="canAccess('packer')" @click="currentTab = 'packer'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'packer' ? 'bg-purple-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-bag-check"></i> Packer
+          </button>
+          <button v-if="canAccess('manager')" @click="currentTab = 'manager'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'manager' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-speedometer2"></i> Floor Lead
+          </button>
+          <button @click="currentTab = 'audit'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'audit' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-journal-text"></i> Audit Logs
+          </button>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 1. PICKER VIEW (OUTBOUND & RETURN PICKING)              -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'picker'" class="space-y-3">
+          <!-- Picker subtabs -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <button @click="pickerMode = 'outbound'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
+                :class="pickerMode === 'outbound' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
+                Outbound Order Pick
+              </button>
+              <button @click="pickerMode = 'returns'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
+                :class="pickerMode === 'returns' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
+                Customer Return Pick
+              </button>
+            </div>
+
+            <button @click="fetchPickerTask" class="text-xs text-amber-400 hover:underline flex items-center gap-1">
+              <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
+
+          <!-- Outbound Picking Section -->
+          <div v-if="pickerMode === 'outbound'">
+            <!-- Active Task Assigned Card -->
+            <div v-if="pickerTask" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3 shadow-lg">
+              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div>
+                  <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-black uppercase">
+                    PickList #{{ pickerTask.pickListId }}
+                  </span>
+                  <h3 class="text-base font-black text-white mt-1">Order #{{ pickerTask.orderId }}</h3>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs font-mono font-bold text-amber-400 flex items-center gap-1">
+                    <i class="bi bi-stopwatch-fill animate-pulse text-rose-400"></i>
+                    Target: 60-90s/item
+                  </div>
+                  <div class="text-[11px] text-slate-400">
+                    {{ pickerTask.totalPicked }} / {{ pickerTask.totalItems }} Items Picked
+                  </div>
+                </div>
+              </div>
+
+              <!-- Progress bar -->
+              <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div class="bg-amber-500 h-2 rounded-full transition-all duration-300"
+                  :style="{ width: (pickerTask.totalPicked / (pickerTask.totalItems || 1) * 100) + '%' }"></div>
+              </div>
+
+              <!-- Item List with Shelf Bin Location -->
+              <div class="space-y-2">
+                <div v-for="item in pickerTask.items" :key="item.itemId"
+                  class="p-3 rounded-lg border transition-all"
+                  :class="item.status === 'PICKED' ? 'bg-emerald-950/20 border-emerald-800/40 opacity-70' : 'bg-slate-900 border-slate-800'">
+                  <div class="flex items-start gap-2.5">
+                    <img :src="item.imageUrl" class="w-14 h-14 rounded-lg object-cover bg-slate-800 border border-slate-700 flex-shrink-0">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="text-xs font-black text-amber-400 font-mono tracking-tight bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                          <i class="bi bi-geo-alt-fill text-rose-400"></i> {{ item.shelfCode }}
+                        </span>
+                        <span v-if="item.status === 'PICKED'" class="text-[10px] bg-emerald-500 text-slate-950 font-bold px-1.5 py-0.2 rounded">
+                          PICKED
+                        </span>
+                      </div>
+                      <h4 class="text-xs font-bold text-white truncate mt-1">{{ item.productName }}</h4>
+                      <p class="text-[11px] text-slate-400 font-mono">SKU: {{ item.sku }} | Qty: <strong class="text-white">{{ item.qtyToPick }}</strong></p>
+                    </div>
+                  </div>
+
+                  <!-- Barcode Scan trigger for this item -->
+                  <div v-if="item.status !== 'PICKED'" class="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2">
+                    <input v-model="scanInputs[item.itemId]" @keyup.enter="scanPickItem(item)"
+                      placeholder="Scan/Type Barcode to confirm..."
+                      class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+                    <button @click="scanPickItem(item)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                      <i class="bi bi-upc-scan"></i> Scan
+                    </button>
+                    <button @click="openCameraScanner(item)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-1.5 rounded text-xs border border-slate-700">
+                      <i class="bi bi-camera-fill"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Complete Order Button -->
+              <button @click="completePickOrder"
+                :disabled="pickerTask.totalPicked < pickerTask.totalItems"
+                class="w-full py-3 rounded-lg font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition"
+                :class="pickerTask.totalPicked >= pickerTask.totalItems
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20'
+                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'">
+                <i class="bi bi-check-circle-fill"></i> Complete Order & Pick Next (Auto-Assign)
+              </button>
+            </div>
+
+            <!-- Empty / Waiting State -->
+            <div v-else class="bg-slate-950 border border-slate-800 rounded-xl p-8 text-center space-y-3">
+              <div class="w-14 h-14 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-2xl text-amber-400">
+                <i class="bi bi-hourglass-split animate-spin"></i>
+              </div>
+              <h3 class="text-sm font-black text-white">No Picking Order Assigned</h3>
+              <p class="text-xs text-slate-400 max-w-xs mx-auto">
+                {{ duty.duty === 'ON' ? 'Aapki Duty ON hai! Agla order aate hi ya free hote hi system auto-assign karega.' : 'Duty ON karein taaki orders automatically assign ho sakein.' }}
+              </p>
+              <button v-if="duty.duty === 'OFF'" @click="toggleDuty" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs">
+                Switch Duty ON
+              </button>
+            </div>
+          </div>
+
+          <!-- Customer Return Picking Section -->
+          <div v-if="pickerMode === 'returns'" class="space-y-2.5">
+            <div v-for="ret in returnPickList" :key="ret.returnId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-black text-rose-400 font-mono">{{ ret.returnId }}</span>
+                <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-bold">Rider Handover Return</span>
+              </div>
+              <div class="text-xs">
+                <h4 class="font-bold text-white">{{ ret.productName }} (Qty: {{ ret.qty }})</h4>
+                <p class="text-slate-400 mt-0.5">Bin: <strong class="text-amber-400 font-mono">{{ ret.shelfCode }}</strong></p>
+                <p class="text-slate-400">Customer: <strong class="text-slate-200">{{ ret.customerName }}</strong> | Rider: <strong class="text-slate-200">{{ ret.riderName }}</strong></p>
+                <p class="text-slate-400 text-[11px] italic mt-1 text-amber-400/80">Reason: {{ ret.reason }}</p>
+              </div>
+              <div class="pt-2 border-t border-slate-800 flex items-center gap-2">
+                <input v-model="ret.scannedBin" placeholder="Scan Bin Barcode to pick..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
+                <button @click="confirmReturnPick(ret)" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                  <i class="bi bi-box-arrow-in-down-left"></i> Pick to Dock
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 2. PUT-AWAY ASSOCIATE / STAGING LOADER VIEW              -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'putter'" class="space-y-3">
+          <div class="flex items-center gap-2">
+            <button @click="putterTab = 'dock'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
+              :class="putterTab === 'dock' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
+              Dock Clearance (PO Inward)
+            </button>
+            <button @click="putterTab = 'reverse'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
+              :class="putterTab === 'reverse' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
+              Reverse Put-away (Restock)
+            </button>
+          </div>
+
+          <!-- Dock Clearance Tasks -->
+          <div v-if="putterTab === 'dock'" class="space-y-2.5">
+            <div v-for="task in putawayTasks" :key="task.taskId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div>
+                  <span class="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-bold font-mono">
+                    {{ task.palletId }}
+                  </span>
+                  <h4 class="text-xs font-black text-white mt-1">{{ task.productName }}</h4>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs font-bold text-slate-200">Qty: {{ task.quantity }}</div>
+                  <div class="text-[11px] text-cyan-400 font-mono">{{ task.weightKg }} kg</div>
+                </div>
+              </div>
+
+              <!-- Stock Hygiene Alert Banner -->
+              <div class="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-medium flex items-center gap-2">
+                <i class="bi bi-shield-check text-sm text-amber-400 flex-shrink-0"></i>
+                <span>{{ task.hygieneRule }}</span>
+              </div>
+
+              <!-- Suggested Bin -->
+              <div class="flex items-center justify-between bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                <div>
+                  <div class="text-[10px] uppercase font-bold text-slate-400">Suggested Target Bin</div>
+                  <div class="text-sm font-black font-mono text-cyan-400 flex items-center gap-1">
+                    <i class="bi bi-geo-alt-fill text-rose-400"></i> {{ task.suggestedBin }}
+                  </div>
+                </div>
+                <div class="text-[11px] text-slate-400 font-mono">From: {{ task.stagingDock }}</div>
+              </div>
+
+              <!-- Scan Step 1 & 2 -->
+              <div class="space-y-2 pt-1">
+                <!-- Step 1: Scan Bin -->
+                <div class="flex items-center gap-2">
+                  <input v-model="task.scannedBinInput" placeholder="Step 1: Scan Bin Barcode..."
+                    class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500">
+                  <button @click="verifyPutawayBin(task)" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                    <i class="bi bi-upc-scan"></i> Bin Scan
+                  </button>
+                </div>
+
+                <!-- Step 2: Confirm Item Placement -->
+                <div v-if="task.binVerified" class="flex items-center gap-2 animate-fadeIn">
+                  <input v-model="task.scannedItemInput" placeholder="Step 2: Scan Item Barcode to place..."
+                    class="flex-1 bg-slate-900 border border-emerald-600 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
+                  <button @click="confirmPutawayPlacement(task)" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                    <i class="bi bi-check-lg"></i> Put in Shelf
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reverse Putaway -->
+          <div v-if="putterTab === 'reverse'" class="space-y-2.5">
+            <div v-for="rev in reversePutawayList" :key="rev.taskId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-mono font-bold text-purple-400">{{ rev.taskId }} - {{ rev.returnId }}</span>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">Restock to Shelf</span>
+              </div>
+              <h4 class="text-xs font-bold text-white">{{ rev.productName }} (Qty: {{ rev.quantity }})</h4>
+              <p class="text-xs text-slate-400">Target Shelf: <strong class="text-cyan-400 font-mono">{{ rev.targetShelf }}</strong></p>
+              <p class="text-[11px] text-slate-500 italic">{{ rev.reason }}</p>
+              <div class="pt-2 border-t border-slate-800 flex items-center gap-2">
+                <input v-model="rev.scannedBin" placeholder="Scan Target Bin to restock..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono">
+                <button @click="confirmReverseRestock(rev)" class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3 py-1.5 rounded text-xs">
+                  Restock
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 3. INWARD / RECEIVING ASSOCIATE VIEW                     -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'inward'" class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider">Purchase Orders Unloading (PO)</h3>
+            <button @click="openDamageModal(null)" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-2.5 py-1 rounded flex items-center gap-1 shadow-md">
+              <i class="bi bi-exclamation-octagon-fill"></i> Flag Damage/Leakage
+            </button>
+          </div>
+
+          <div class="space-y-2.5">
+            <div v-for="po in purchaseOrders" :key="po.poNumber" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div>
+                  <span class="text-xs font-black text-emerald-400 font-mono">{{ po.poNumber }}</span>
+                  <h4 class="text-xs font-bold text-white mt-0.5">{{ po.supplierName }}</h4>
+                </div>
+                <div class="text-right">
+                  <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono font-bold">{{ po.truckNumber }}</span>
+                  <div class="text-[11px] text-slate-400 mt-0.5">Exp: {{ po.expectedCartons }} Cartons</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Received Cartons</label>
+                  <input v-model="po.receivedInput" type="number" :placeholder="'Expected ' + po.expectedCartons"
+                    class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Contact</label>
+                  <div class="text-slate-300 font-mono py-1.5">{{ po.driverContact }}</div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 pt-1 border-t border-slate-800">
+                <button @click="receivePO(po)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded text-xs flex items-center justify-center gap-1">
+                  <i class="bi bi-clipboard-check"></i> Verify Count & Unload
+                </button>
+                <button @click="generatePalletTag(po)" class="bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold px-3 py-1.5 rounded text-xs border border-slate-700 flex items-center gap-1">
+                  <i class="bi bi-tag-fill"></i> Tag Staging Pallet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 4. PACKER & SORTER VIEW                                  -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'packer'" class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-black uppercase text-purple-400 tracking-wider">Packing Table & Bagging</h3>
+            <span class="text-xs text-slate-400">{{ ordersToPack.length }} Picked Orders Waiting</span>
+          </div>
+
+          <div v-if="ordersToPack.length === 0" class="bg-slate-950 border border-slate-800 rounded-xl p-8 text-center text-slate-400 text-xs">
+            <i class="bi bi-box2 text-3xl text-slate-600 block mb-2"></i>
+            No orders currently waiting at packing table.
+          </div>
+
+          <div v-for="order in ordersToPack" :key="order.orderId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-black">
+                  READY FOR PACKING
+                </span>
+                <h4 class="text-sm font-black text-white mt-1">Order #{{ order.orderId }}</h4>
+              </div>
+              <div class="text-right">
+                <div class="text-xs font-bold text-slate-200">Exp Weight: {{ order.expectedWeightKg }} kg</div>
+                <div class="text-[10px] text-purple-400 font-mono">{{ order.suggestedBag }}</div>
+              </div>
+            </div>
+
+            <!-- Items Table to Tally -->
+            <div class="space-y-1.5">
+              <div class="text-[10px] font-bold text-slate-400 uppercase">Items to verify on table:</div>
+              <div v-for="item in order.items" :key="item.orderItemId"
+                class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800 text-xs">
+                <div>
+                  <div class="font-bold text-white">{{ item.productName }}</div>
+                  <div class="text-[10px] text-slate-400 font-mono">SKU: {{ item.sku }} (x{{ item.qty }})</div>
+                </div>
+                <span v-if="verifiedPackItems[order.orderId + '_' + item.sku]" class="text-emerald-400 text-xs font-bold flex items-center gap-1">
+                  <i class="bi bi-check2-circle"></i> Tally OK
+                </span>
+                <button v-else @click="verifyPackItem(order.orderId, item.sku)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded text-[11px] border border-slate-700 font-mono">
+                  Scan Tally
+                </button>
+              </div>
+            </div>
+
+            <!-- Seal & Dispatch Handover Form -->
+            <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Bag Seal Barcode</label>
+                  <input v-model="packForms[order.orderId].sealBarcode" placeholder="Scan Seal # e.g. SEAL-8812"
+                    class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Scale Weight (Kg)</label>
+                  <input v-model="packForms[order.orderId].actualWeight" type="number" step="0.1" :placeholder="order.expectedWeightKg + ' kg'"
+                    class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase">Handover Bay / Rider Bay</label>
+                <select v-model="packForms[order.orderId].handoverBay" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+                  <option value="BAY-DISPATCH-01">Bay 01 (Zepto Express Zone)</option>
+                  <option value="BAY-DISPATCH-02">Bay 02 (Standard Dispatch)</option>
+                  <option value="BAY-DISPATCH-03">Bay 03 (Cold Chain Cargo)</option>
+                </select>
+              </div>
+
+              <button @click="sealAndHandover(order.orderId)" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-md shadow-purple-900/30">
+                <i class="bi bi-shield-lock-fill"></i> Seal Bag & Handover to Bay
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 5. WAREHOUSE MANAGER / FLOOR LEAD VIEW                   -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'manager'" class="space-y-3">
+          <!-- Live Floor Metrics -->
+          <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] font-bold text-slate-400 uppercase">Staff Duty ON</div>
+              <div class="text-lg font-black text-emerald-400 mt-0.5">{{ floorStats.staffCount?.dutyOn || 0 }}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] font-bold text-slate-400 uppercase">Pending Orders</div>
+              <div class="text-lg font-black text-amber-400 mt-0.5">{{ floorStats.summary?.pending || 0 }}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] font-bold text-slate-400 uppercase">Picking Now</div>
+              <div class="text-lg font-black text-cyan-400 mt-0.5">{{ floorStats.summary?.picking || 0 }}</div>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <div class="text-[10px] font-bold text-slate-400 uppercase">Ready Dispatch</div>
+              <div class="text-lg font-black text-purple-400 mt-0.5">{{ floorStats.summary?.dispatchReady || 0 }}</div>
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="flex items-center gap-2">
+            <button @click="triggerManagerAutoAssign" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2 rounded-lg text-xs flex items-center justify-center gap-1 shadow-lg">
+              <i class="bi bi-lightning-charge-fill"></i> Trigger Auto-Assign Engine
+            </button>
+            <button @click="openRtvModal" class="bg-slate-800 hover:bg-slate-700 text-white font-bold px-3 py-2 rounded-lg text-xs border border-slate-700 flex items-center gap-1">
+              <i class="bi bi-file-earmark-text-fill"></i> RTV Gatepass
+            </button>
+          </div>
+
+          <!-- Staff Shift & Attendance Live Table -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+                <i class="bi bi-people-fill text-amber-400"></i> Floor Staff Attendance & Duty
+              </h4>
+              <button @click="fetchFloorStatus" class="text-[11px] text-slate-400 hover:text-white">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div class="divide-y divide-slate-800/80 max-h-60 overflow-y-auto">
+              <div v-for="staff in floorStats.staff" :key="staff.userId" class="py-2 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase overflow-hidden border border-slate-700">
+                    <img v-if="staff.selfieUrl" :src="staff.selfieUrl" class="w-full h-full object-cover">
+                    <span v-else>{{ staff.name.charAt(0) }}</span>
+                  </div>
+                  <div>
+                    <div class="font-bold text-white flex items-center gap-1.5">
+                      {{ staff.name }}
+                      <span class="text-[9px] px-1.5 py-0.2 rounded font-black uppercase" :class="getRoleBadgeClass(staff.role)">
+                        {{ staff.role }}
+                      </span>
+                    </div>
+                    <div class="text-[10px] text-slate-400">
+                      In: {{ staff.punchInTime }} (Shift: {{ staff.slot }})
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-right">
+                  <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
+                    :class="staff.duty === 'ON' ? (staff.onBreak ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400') : 'bg-slate-800 text-slate-500'">
+                    {{ staff.onBreak ? 'ON BREAK' : staff.duty }}
+                  </span>
+                  <div class="text-[10px] text-slate-400 font-mono mt-0.5">{{ staff.activeTask }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discrepancy Approval Desk -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+            <h4 class="text-xs font-black uppercase text-rose-400 tracking-wider flex items-center gap-1.5">
+              <i class="bi bi-shield-exclamation"></i> Discrepancy Approvals (Damage / Shortage)
+            </h4>
+
+            <div v-if="discrepancies.length === 0" class="text-xs text-slate-500 text-center py-3">
+              No pending discrepancies reported.
+            </div>
+
+            <div v-for="disc in discrepancies" :key="disc.ticketId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="font-black text-rose-400 font-mono">{{ disc.ticketId }}</span>
+                <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-bold">{{ disc.damageType }}</span>
+              </div>
+              <div class="text-slate-300">
+                PO: <strong class="text-white">{{ disc.poNumber }}</strong> | SKU: <strong class="text-white">{{ disc.sku }}</strong> | Qty: <strong class="text-white">{{ disc.quantity }}</strong>
+              </div>
+              <div class="text-[11px] text-slate-400">Reported by: {{ disc.reportedBy }}</div>
+
+              <!-- Preview Photo if attached -->
+              <div v-if="disc.photoUrl" class="mt-1">
+                <a :href="disc.photoUrl" target="_blank" class="text-[11px] text-cyan-400 hover:underline flex items-center gap-1">
+                  <i class="bi bi-image"></i> View Damage Proof Photo (MinIO)
+                </a>
+              </div>
+
+              <div class="flex items-center gap-2 pt-1 border-t border-slate-800">
+                <button @click="resolveDiscrepancy(disc.ticketId, 'APPROVED_FOR_RTV')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded text-[11px]">
+                  Approve for RTV
+                </button>
+                <button @click="resolveDiscrepancy(disc.ticketId, 'REJECTED')" class="bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold px-2.5 py-1 rounded text-[11px] border border-slate-700">
+                  Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 6. AUDIT TRAIL VIEW                                      -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'audit'" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h3 class="text-xs font-black uppercase text-white tracking-wider flex items-center gap-1.5">
+              <i class="bi bi-journal-check text-indigo-400"></i> Warehouse Audit Trail (PostgreSQL)
+            </h3>
+            <button @click="fetchAuditLogs" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
+              <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
+
+          <div class="space-y-2 max-h-[500px] overflow-y-auto">
+            <div v-for="log in auditLogs" :key="log.logId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80 text-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-indigo-400 font-mono text-[11px]">{{ log.action }}</span>
+                <span class="text-[10px] text-slate-500">{{ new Date(log.time).toLocaleTimeString() }}</span>
+              </div>
+              <div class="text-slate-300 text-[11px]">
+                By: <strong class="text-white">{{ log.user?.name || 'Staff' }}</strong> ({{ log.user?.role }}) | Table: <code class="text-amber-400 font-mono">{{ log.tableName }}</code>
+              </div>
+              <div v-if="log.details" class="bg-slate-950 p-1.5 rounded font-mono text-[10px] text-slate-400 truncate">
+                {{ typeof log.details === 'object' ? JSON.stringify(log.details) : log.details }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- ==================== PUNCH IN MODAL ==================== -->
+    <div v-if="showPunchInModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h3 class="font-black text-sm text-white flex items-center gap-2">
+            <i class="bi bi-fingerprint text-emerald-400"></i> Staff Shift Punch In
+          </h3>
+          <button @click="showPunchInModal = false" class="text-slate-500 hover:text-white">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Select Shift Slot</label>
+          <div class="grid grid-cols-3 gap-2 text-xs font-bold">
+            <button type="button" @click="punchInForm.slot = 'Morning'" class="p-2 rounded-lg border text-center transition"
+              :class="punchInForm.slot === 'Morning' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
+              Morning<br><span class="text-[10px] font-normal opacity-80">06:00-14:00</span>
+            </button>
+            <button type="button" @click="punchInForm.slot = 'General'" class="p-2 rounded-lg border text-center transition"
+              :class="punchInForm.slot === 'General' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
+              General<br><span class="text-[10px] font-normal opacity-80">09:00-18:00</span>
+            </button>
+            <button type="button" @click="punchInForm.slot = 'Night'" class="p-2 rounded-lg border text-center transition"
+              :class="punchInForm.slot === 'Night' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
+              Night<br><span class="text-[10px] font-normal opacity-80">22:00-06:00</span>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Selfie / Biometric Verification</label>
+          <div class="border-2 border-dashed border-slate-800 rounded-xl p-3 text-center bg-slate-900">
+            <input type="file" ref="selfieInput" accept="image/*" capture="user" @change="onSelfieSelected" class="hidden">
+            <div v-if="selfiePreview" class="relative">
+              <img :src="selfiePreview" class="w-24 h-24 rounded-full object-cover mx-auto border-2 border-emerald-500">
+              <button @click="selfiePreview = null; punchInForm.selfieFile = null" class="absolute top-0 right-1/4 bg-rose-500 text-white rounded-full p-1 text-xs">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+            <div v-else @click="$refs.selfieInput.click()" class="cursor-pointer space-y-1">
+              <i class="bi bi-camera text-2xl text-slate-500"></i>
+              <div class="text-xs font-bold text-slate-300">Tap to Take Selfie Photo</div>
+              <div class="text-[10px] text-slate-500">Stored in MinIO object storage</div>
+            </div>
+          </div>
+        </div>
+
+        <button @click="submitPunchIn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg">
+          Confirm Punch In & Set Duty ON
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== CAMERA SCANNER MODAL ==================== -->
+    <div v-if="showCameraModal" class="fixed inset-0 bg-black/90 z-50 flex flex-col p-4">
+      <div class="flex items-center justify-between pb-2">
+        <h3 class="text-white text-sm font-bold flex items-center gap-2">
+          <i class="bi bi-camera-fill text-amber-400"></i> Scanning Barcode / SKU
+        </h3>
+        <button @click="closeCameraScanner" class="text-white text-lg p-1">
+          <i class="bi bi-x-circle-fill"></i>
+        </button>
+      </div>
+      <div id="reader" class="w-full flex-1 rounded-xl overflow-hidden bg-black border border-slate-800"></div>
+    </div>
+
+    <!-- ==================== RTV GATEPASS MODAL ==================== -->
+    <div v-if="showRtvModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-slate-800 w-full max-w-md rounded-2xl p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h3 class="font-black text-sm text-white flex items-center gap-2">
+            <i class="bi bi-truck text-cyan-400"></i> Generate RTV Gatepass (Return to Vendor)
+          </h3>
+          <button @click="showRtvModal = false" class="text-slate-500 hover:text-white">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <div class="space-y-2 text-xs">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase">Vendor Name</label>
+            <input v-model="rtvForm.vendorName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase">Transporter</label>
+              <input v-model="rtvForm.transporterName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase">Vehicle Number</label>
+              <input v-model="rtvForm.vehicleNumber" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Name</label>
+              <input v-model="rtvForm.driverName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Mobile</label>
+              <input v-model="rtvForm.driverContact" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
+            </div>
+          </div>
+        </div>
+
+        <button @click="submitRtvGatepass" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 rounded-lg text-xs uppercase">
+          Issue Gatepass & Generate Manifest
+        </button>
+
+        <div v-if="generatedGatepass" class="p-3 rounded-lg bg-slate-900 border border-cyan-800/40 text-xs space-y-1 font-mono">
+          <div class="text-cyan-400 font-bold">Gatepass Issued: {{ generatedGatepass.gatepassNo }}</div>
+          <div class="text-slate-300">Security Seal: {{ generatedGatepass.securityApprovalStamp }}</div>
+          <div class="text-emerald-400 text-[10px]">Ready for vehicle exit at Gate 1</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div v-if="toastMessage" class="fixed bottom-3 left-4 right-4 max-w-sm mx-auto z-50 p-3 rounded-xl shadow-2xl text-xs font-bold flex items-center justify-between border"
+      :class="toastType === 'error' ? 'bg-rose-950 border-rose-700 text-rose-200' : 'bg-emerald-950 border-emerald-700 text-emerald-200'">
+      <div class="flex items-center gap-2">
+        <i :class="toastType === 'error' ? 'bi bi-x-circle-fill text-rose-400' : 'bi bi-check-circle-fill text-emerald-400'"></i>
+        <span>{{ toastMessage }}</span>
+      </div>
+      <button @click="toastMessage = null" class="text-slate-400 hover:text-white">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
