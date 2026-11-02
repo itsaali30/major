@@ -55,12 +55,19 @@
       </div>
 
       <!-- Attendance & Duty Controls (When Logged In) -->
-      <div v-if="isLoggedIn" class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2">
-        <!-- Punch In / Out Button -->
-        <div class="flex items-center gap-1.5">
+      <div v-if="isLoggedIn" class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2 flex-wrap">
+        <!-- Punch In / Out Button & Code Pending Alert -->
+        <div class="flex items-center gap-1.5 flex-wrap">
           <button v-if="duty.duty === 'OFF'" @click="openPunchInModal" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition">
             <i class="bi bi-fingerprint text-sm"></i> Punch In
           </button>
+          
+          <!-- When Punch In is waiting for Manager 4-Digit Code -->
+          <button v-else-if="duty.duty === 'PENDING_APPROVAL' || duty.requiresCode" @click="openDutyCodeModal"
+            class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-lg shadow-amber-500/20 animate-pulse">
+            <i class="bi bi-key-fill text-sm"></i> Enter 4-Digit Manager Code
+          </button>
+
           <button v-else @click="punchOut" class="bg-rose-600/80 hover:bg-rose-500 text-white font-bold px-2.5 py-1.5 rounded-md flex items-center gap-1 transition">
             <i class="bi bi-box-arrow-left"></i> Punch Out
           </button>
@@ -75,11 +82,12 @@
 
         <!-- Duty Toggle Switch -->
         <div class="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
-          <span class="text-[11px] font-bold uppercase tracking-wider" :class="duty.duty === 'ON' ? 'text-emerald-400' : 'text-slate-500'">
-            {{ duty.duty === 'ON' ? 'Duty ON' : 'Duty OFF' }}
+          <span class="text-[11px] font-bold uppercase tracking-wider"
+            :class="duty.duty === 'ON' ? 'text-emerald-400' : (duty.duty === 'PENDING_APPROVAL' ? 'text-amber-400' : 'text-slate-500')">
+            {{ duty.duty === 'ON' ? 'Duty ON' : (duty.duty === 'PENDING_APPROVAL' ? 'Awaiting Code' : 'Duty OFF') }}
           </span>
           <button @click="toggleDuty" class="w-10 h-5 rounded-full transition relative border"
-            :class="duty.duty === 'ON' ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-700 border-slate-600'">
+            :class="duty.duty === 'ON' ? 'bg-emerald-500 border-emerald-400' : (duty.duty === 'PENDING_APPROVAL' ? 'bg-amber-500 border-amber-400' : 'bg-slate-700 border-slate-600')">
             <span class="w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition"
               :class="duty.duty === 'ON' ? 'right-0.5' : 'left-0.5'"></span>
           </button>
@@ -90,15 +98,32 @@
     <!-- Main Content Area -->
     <main class="flex-1 p-3">
 
-      <!-- ==================== LOGIN VIEW ==================== -->
-      <section v-if="!isLoggedIn" class="pt-6 pb-12 flex flex-col items-center">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center text-3xl font-black mb-4 shadow-xl shadow-amber-500/20">
+      <!-- ==================== AUTH VIEW (LOGIN / SIGNUP / FORGOT PASSWORD) ==================== -->
+      <section v-if="!isLoggedIn" class="pt-4 pb-12 flex flex-col items-center">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center text-3xl font-black mb-3 shadow-xl shadow-amber-500/20">
           <i class="bi bi-upc-scan"></i>
         </div>
-        <h2 class="text-xl font-black text-white tracking-wide">Warehouse Terminal Login</h2>
-        <p class="text-xs text-slate-400 mb-6 text-center">Scan Badge or enter staff credentials to access role dashboard</p>
+        <h2 class="text-xl font-black text-white tracking-wide">Warehouse Terminal (WMS)</h2>
+        <p class="text-xs text-slate-400 mb-4 text-center">Handheld PDA system for Picker, Put-away, Inward & Packer staff</p>
 
-        <form @submit.prevent="login" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
+        <!-- Auth Switch Tabs (Login / Sign Up / Forgot Password) -->
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 mb-4 w-full max-w-sm text-xs font-bold">
+          <button @click="authMode = 'login'" class="flex-1 py-1.5 rounded-lg text-center transition"
+            :class="authMode === 'login' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-box-arrow-in-right"></i> Login
+          </button>
+          <button @click="authMode = 'signup'" class="flex-1 py-1.5 rounded-lg text-center transition"
+            :class="authMode === 'signup' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-person-plus-fill"></i> Sign Up
+          </button>
+          <button @click="authMode = 'forgot'" class="flex-1 py-1.5 rounded-lg text-center transition"
+            :class="authMode === 'forgot' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-question-circle-fill"></i> Forgot?
+          </button>
+        </div>
+
+        <!-- 1. LOGIN FORM -->
+        <form v-if="authMode === 'login'" @submit.prevent="login" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
           <div>
             <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Mobile or Email</label>
             <div class="relative">
@@ -109,7 +134,10 @@
           </div>
 
           <div>
-            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Password</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-slate-300 uppercase">Password</label>
+              <button type="button" @click="authMode = 'forgot'" class="text-[11px] text-amber-400 hover:underline">Forgot Password?</button>
+            </div>
             <div class="relative">
               <i class="bi bi-key absolute left-3 top-2.5 text-slate-500"></i>
               <input v-model="loginForm.password" type="password" required placeholder="••••••••"
@@ -125,7 +153,7 @@
           <button type="submit" :disabled="isLoggingIn"
             class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-sm uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20">
             <span v-if="isLoggingIn" class="animate-spin text-lg"><i class="bi bi-arrow-repeat"></i></span>
-            <span v-else><i class="bi bi-box-arrow-in-right"></i> Punch In & Access PDA</span>
+            <span v-else><i class="bi bi-box-arrow-in-right"></i> Login & Access PDA</span>
           </button>
 
           <!-- Quick Role Demo Switcher -->
@@ -150,6 +178,94 @@
             </div>
           </div>
         </form>
+
+        <!-- 2. SIGN UP FORM (NEW STAFF REGISTRATION) -->
+        <form v-else-if="authMode === 'signup'" @submit.prevent="submitSignUp" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">First Name</label>
+              <input v-model="signUpForm.firstName" type="text" required placeholder="e.g. Ramesh"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Last Name</label>
+              <input v-model="signUpForm.lastName" type="text" placeholder="e.g. Yadav"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Mobile Number</label>
+            <input v-model="signUpForm.mobile" type="tel" required placeholder="10-digit mobile e.g. 9876543210"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Email ID</label>
+            <input v-model="signUpForm.email" type="email" required placeholder="ramesh@warehouse.com"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Warehouse Staff Role</label>
+            <select v-model="signUpForm.role" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+              <option value="picker">🎯 Picker (Item Uthane Wala)</option>
+              <option value="putter">📦 Put-away Associate (Maal Rakhne Wala)</option>
+              <option value="inward">🚚 Inward / Receiving Associate</option>
+              <option value="packer">🛍️ Packer & Sorter</option>
+              <option value="manager">🧑‍💼 Warehouse Floor Lead / Manager</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Set Password</label>
+            <input v-model="signUpForm.password" type="password" required placeholder="Create password"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+          </div>
+
+          <div v-if="authError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>{{ authError }}</span>
+          </div>
+
+          <button type="submit" :disabled="isSubmittingAuth"
+            class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg">
+            <span v-if="isSubmittingAuth" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+            <span v-else><i class="bi bi-check-circle-fill"></i> Register Staff Account</span>
+          </button>
+        </form>
+
+        <!-- 3. FORGOT PASSWORD FORM -->
+        <form v-else-if="authMode === 'forgot'" @submit.prevent="submitForgotPassword" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
+          <h4 class="text-xs font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+            <i class="bi bi-shield-lock-fill"></i> Reset Terminal Password
+          </h4>
+          <p class="text-[11px] text-slate-400">Enter your registered mobile or email to reset your terminal password.</p>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Registered Mobile or Email</label>
+            <input v-model="forgotForm.login" type="text" required placeholder="e.g. 9876543210"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">New Password</label>
+            <input v-model="forgotForm.newPassword" type="password" required placeholder="Enter new password"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+          </div>
+
+          <div v-if="authError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>{{ authError }}</span>
+          </div>
+
+          <button type="submit" :disabled="isSubmittingAuth"
+            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg">
+            <span v-if="isSubmittingAuth" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+            <span v-else><i class="bi bi-arrow-counterclockwise"></i> Reset Password & Login</span>
+          </button>
+        </form>
+
       </section>
 
       <!-- ==================== DASHBOARD WHEN LOGGED IN ==================== -->
@@ -730,8 +846,45 @@
         </div>
 
         <button @click="submitPunchIn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg">
-          Confirm Punch In & Set Duty ON
+          Confirm Punch In (Request Manager Approval)
         </button>
+      </div>
+    </div>
+
+    <!-- ==================== 4-DIGIT MANAGER DUTY CODE MODAL ==================== -->
+    <div v-if="showDutyCodeModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-amber-500/40 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-center">
+        <div class="w-14 h-14 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mx-auto text-2xl">
+          <i class="bi bi-shield-lock-fill"></i>
+        </div>
+        <div>
+          <h3 class="font-black text-base text-white tracking-wide">Enter 4-Digit Manager Code</h3>
+          <p class="text-xs text-slate-400 mt-1">
+            Floor Manager aapka punch-in approve karke 4-digit code dega. Woh code yahan enter karein taaki duty chalu ho sake.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-2">4-Digit Security Code</label>
+          <input v-model="dutyVerificationCode" maxlength="4" type="tel"
+            placeholder="• • • •"
+            class="w-44 mx-auto text-center font-mono text-2xl font-black tracking-[0.5em] bg-slate-900 border-2 border-amber-500/50 rounded-xl py-2.5 text-white focus:outline-none focus:border-amber-400">
+        </div>
+
+        <div v-if="dutyCodeError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs">
+          {{ dutyCodeError }}
+        </div>
+
+        <div class="space-y-2 pt-2">
+          <button @click="submitDutyCodeVerification" :disabled="isVerifyingCode || (dutyVerificationCode || '').length < 4"
+            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5">
+            <span v-if="isVerifyingCode" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+            <span v-else><i class="bi bi-check-circle-fill"></i> Verify & Chalu Karo Duty</span>
+          </button>
+          <button @click="showDutyCodeModal = false" class="text-xs text-slate-500 hover:text-white py-1">
+            Close (Enter code later)
+          </button>
+        </div>
       </div>
     </div>
 

@@ -80,6 +80,20 @@ const AdminDashboard = {
                     <p class="text-muted">Procure stock from merchants</p>
                   </router-link>
                 </div>
+                <div class="col-md-6 mb-4" v-if="$root.isSuperadmin || $root.isAdmin || $root.isManager || $root.isIncharge">
+                  <router-link to="/admin/duty-records" class="card admin-dashboard-btn btn btn-outline-primary text-decoration-none border-primary">
+                    <i class="bi bi-clock-history text-primary"></i>
+                    <h5>Duty Records & Approvals</h5>
+                    <p class="text-muted">Approve staff punch-in & issue 4-digit code</p>
+                  </router-link>
+                </div>
+                <div class="col-md-6 mb-4" v-if="$root.isSuperadmin || $root.isAdmin || $root.isManager || $root.isAccountant">
+                  <router-link to="/admin/payouts" class="card admin-dashboard-btn btn btn-outline-success text-decoration-none border-success">
+                    <i class="bi bi-wallet2 text-success"></i>
+                    <h5>Staff Payout Records</h5>
+                    <p class="text-muted">Picker vs Manager separate payout ledger</p>
+                  </router-link>
+                </div>
               </div>
             </div>
           </div>

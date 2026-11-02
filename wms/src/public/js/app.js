@@ -6,10 +6,23 @@ const app = createApp({
     // Auth & User State
     const isLoggedIn = ref(false);
     const user = ref({});
-    const duty = reactive({ duty: 'OFF', onBreak: false, slot: null, punchInTime: null });
+    const duty = reactive({ duty: 'OFF', onBreak: false, slot: null, punchInTime: null, requiresCode: false, dutyId: null });
     const isLoggingIn = ref(false);
     const loginError = ref(null);
     const loginForm = reactive({ login: '', password: '' });
+
+    // Auth Switch Modes: 'login' | 'signup' | 'forgot'
+    const authMode = ref('login');
+    const signUpForm = reactive({ firstName: '', lastName: '', mobile: '', email: '', password: '', role: 'picker' });
+    const forgotForm = reactive({ login: '', newPassword: '' });
+    const authError = ref(null);
+    const isSubmittingAuth = ref(false);
+
+    // 4-Digit Duty Approval Code State
+    const showDutyCodeModal = ref(false);
+    const dutyVerificationCode = ref('');
+    const dutyCodeError = ref(null);
+    const isVerifyingCode = ref(false);
 
     // Navigation & Tabs
     const currentTab = ref('picker');
@@ -222,7 +235,62 @@ const app = createApp({
       API.setUser(null);
       isLoggedIn.value = false;
       user.value = {};
+      authMode.value = 'login';
       showToast('Logged out from WMS Terminal.');
+    }
+
+    // Sign Up & Forgot Password Methods
+    async function submitSignUp() {
+      isSubmittingAuth.value = true;
+      authError.value = null;
+      try {
+        const res = await API.request('/api/auth/signup', {
+          method: 'POST',
+          body: JSON.stringify(signUpForm)
+        });
+
+        if (res.success) {
+          API.setToken(res.token);
+          API.setUser(res.user);
+          user.value = res.user;
+          Object.assign(duty, res.duty || {});
+          isLoggedIn.value = true;
+          setDefaultTabForRole(user.value.role);
+
+          if (socket) {
+            socket.emit('join', { userId: user.value.userId, role: user.value.role });
+          }
+          showToast(`Welcome ${user.value.name}! Staff account created.`);
+          loadTabContent();
+        }
+      } catch (err) {
+        authError.value = err.message;
+        API.playBeep(false);
+      } finally {
+        isSubmittingAuth.value = false;
+      }
+    }
+
+    async function submitForgotPassword() {
+      isSubmittingAuth.value = true;
+      authError.value = null;
+      try {
+        const res = await API.request('/api/auth/forgot-password', {
+          method: 'POST',
+          body: JSON.stringify(forgotForm)
+        });
+
+        if (res.success) {
+          showToast(res.message);
+          loginForm.login = forgotForm.login;
+          authMode.value = 'login';
+        }
+      } catch (err) {
+        authError.value = err.message;
+        API.playBeep(false);
+      } finally {
+        isSubmittingAuth.value = false;
+      }
     }
 
     // Attendance & Duty Handlers
@@ -230,6 +298,44 @@ const app = createApp({
       showPunchInModal.value = true;
       selfiePreview.value = null;
       punchInForm.selfieFile = null;
+    }
+
+    function openDutyCodeModal() {
+      showDutyCodeModal.value = true;
+      dutyVerificationCode.value = '';
+      dutyCodeError.value = null;
+    }
+
+    async function submitDutyCodeVerification() {
+      if (!dutyVerificationCode.value || dutyVerificationCode.value.length < 4) {
+        dutyCodeError.value = 'Please enter 4-digit approval code';
+        return;
+      }
+      isVerifyingCode.value = true;
+      dutyCodeError.value = null;
+
+      try {
+        const res = await API.request('/api/auth/verify-duty-code', {
+          method: 'POST',
+          body: JSON.stringify({
+            code: dutyVerificationCode.value,
+            dutyId: duty.dutyId
+          })
+        });
+
+        if (res.success && res.verified) {
+          Object.assign(duty, res.duty);
+          showDutyCodeModal.value = false;
+          showToast(res.message, 'success');
+          API.playBeep(true);
+          if (canAccess('picker')) fetchPickerTask();
+        }
+      } catch (err) {
+        dutyCodeError.value = err.message;
+        API.playBeep(false);
+      } finally {
+        isVerifyingCode.value = false;
+      }
     }
 
     function onSelfieSelected(e) {
@@ -258,8 +364,9 @@ const app = createApp({
         if (res.success) {
           Object.assign(duty, res.duty);
           showPunchInModal.value = false;
-          showToast(res.message);
-          if (canAccess('picker')) fetchPickerTask();
+          showToast(res.message, 'success');
+          // Open 4-digit code prompt immediately
+          openDutyCodeModal();
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -769,6 +876,19 @@ const app = createApp({
       isLoggingIn,
       loginError,
       loginForm,
+      authMode,
+      signUpForm,
+      forgotForm,
+      authError,
+      isSubmittingAuth,
+      submitSignUp,
+      submitForgotPassword,
+      showDutyCodeModal,
+      dutyVerificationCode,
+      dutyCodeError,
+      isVerifyingCode,
+      openDutyCodeModal,
+      submitDutyCodeVerification,
       currentTab,
       isSocketConnected,
       toastMessage,

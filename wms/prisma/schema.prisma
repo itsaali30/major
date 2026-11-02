@@ -787,3 +787,45 @@ model PurchaseInvoices {
 
   PurchaseOrder     PurchaseOrders? @relation(fields: [POID], references: [POID], onDelete: Cascade)
 }
+
+model DutyRecords {
+  DutyID         Int       @id @default(autoincrement())
+  StaffID        Int
+  UserID         Int
+  ShiftSlot      String?   // 'Morning', 'General', 'Night'
+  Date           DateTime  @default(now())
+  PunchInTime    String?
+  PunchOutTime   String?
+  SelfieUrl      String?
+  ApprovalStatus String    @default("PENDING_APPROVAL") // 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'COMPLETED', 'REJECTED'
+  ApprovalCode   String?   // 4-digit code generated/given by Manager (e.g. "4821")
+  ApprovedByID   Int?
+  ApprovedAt     DateTime?
+  TotalHours     Float?    @default(0)
+  Notes          String?
+  CreatedAt      DateTime  @default(now())
+  UpdatedAt      DateTime  @updatedAt
+}
+
+model StaffPayouts {
+  PayoutID      Int       @id @default(autoincrement())
+  StaffID       Int
+  UserID        Int
+  Role          String    // 'manager', 'picker', 'packer', etc.
+  PeriodStart   DateTime?
+  PeriodEnd     DateTime?
+  TotalShifts   Int       @default(1)
+  TotalHours    Float     @default(8.0)
+  BasePay       Float     @default(0.0)
+  Incentive     Float     @default(0.0)
+  TotalAmount   Float     @default(0.0)
+  Status        String    @default("PENDING") // 'PENDING', 'PROCESSED', 'PAID'
+  PaymentMethod String?   // 'BANK_TRANSFER', 'UPI', 'CASH'
+  PaymentRef    String?
+  PaidAt        DateTime?
+  ProcessedByID Int?
+  Notes         String?
+  CreatedAt     DateTime  @default(now())
+  UpdatedAt     DateTime  @updatedAt
+}
+
