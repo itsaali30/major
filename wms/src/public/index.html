@@ -39,8 +39,24 @@
         </div>
 
         <div v-if="isLoggedIn" class="flex items-center gap-2">
+          <!-- Live Wallet Pill (Step 8) -->
+          <button @click="currentTab = 'wallet'; fetchWalletSummary()" class="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-md text-[11px] font-mono font-bold hover:bg-emerald-500/20 transition">
+            <i class="bi bi-wallet2 text-xs"></i>
+            <span>₹{{ walletData.availableBalance ? walletData.availableBalance.toFixed(0) : '600' }}</span>
+          </button>
+
+          <!-- Salary Rate Notice Button (Step 2) -->
+          <button @click="showSalaryNoticeModal = true" class="hidden sm:flex text-[10px] text-amber-400/90 font-bold items-center gap-1 bg-slate-800/80 px-2 py-1 rounded border border-slate-700 hover:border-amber-500/40">
+            <i class="bi bi-cash-stack"></i> Rates & Salary
+          </button>
+
+          <!-- Worker Profile Trigger (Step 4) -->
+          <button @click="showProfileModal = true" class="w-8 h-8 rounded-full bg-slate-800 border border-amber-500/40 text-amber-400 flex items-center justify-center text-xs font-black shadow-md hover:scale-105 transition" title="Worker Profile">
+            {{ user.name ? user.name.charAt(0).toUpperCase() : 'U' }}
+          </button>
+
           <!-- Role Badge -->
-          <div class="text-right">
+          <div class="text-right hidden sm:block">
             <div class="text-xs font-bold text-slate-200 capitalize leading-tight">{{ user.name }}</div>
             <span class="text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase"
               :class="getRoleBadgeClass(user.role)">
@@ -48,7 +64,7 @@
             </span>
           </div>
 
-          <button @click="logout" class="w-8 h-8 rounded bg-slate-800 text-slate-400 hover:text-rose-400 flex items-center justify-center text-sm border border-slate-700">
+          <button @click="logout" title="Logout" class="w-8 h-8 rounded bg-slate-800 text-slate-400 hover:text-rose-400 flex items-center justify-center text-sm border border-slate-700">
             <i class="bi bi-box-arrow-right"></i>
           </button>
         </div>
@@ -288,6 +304,18 @@
           <button v-if="canAccess('packer')" @click="currentTab = 'packer'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
             :class="currentTab === 'packer' ? 'bg-purple-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
             <i class="bi bi-bag-check"></i> Packer
+          </button>
+          <button @click="currentTab = 'transfer'; fetchTransferData()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'transfer' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-arrow-left-right"></i> Transfer / Move
+          </button>
+          <button @click="currentTab = 'shifts'; fetchShiftSlots(); fetchAttendanceHistory()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'shifts' ? 'bg-teal-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-calendar-check"></i> Shifts & Attendance
+          </button>
+          <button @click="currentTab = 'wallet'; fetchWalletSummary(); fetchPayoutHistory()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
+            :class="currentTab === 'wallet' ? 'bg-emerald-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
+            <i class="bi bi-wallet2"></i> Wallet & Payout
           </button>
           <button v-if="canAccess('manager')" @click="currentTab = 'manager'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
             :class="currentTab === 'manager' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
@@ -794,6 +822,419 @@
           </div>
         </div>
 
+        <!-- ======================================================== -->
+        <!-- 7. STEP 7: TRANSFER & MOVE (INTERNAL & STORE-TO-STORE)   -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'transfer'" class="space-y-3">
+          <!-- Sub-tabs -->
+          <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold overflow-x-auto scrollbar-none">
+            <button @click="transferTab = 'internal'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
+              :class="transferTab === 'internal' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+              <i class="bi bi-box-arrow-in-right"></i> Internal Shelf Move
+            </button>
+            <button @click="transferTab = 'dispatch'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
+              :class="transferTab === 'dispatch' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+              <i class="bi bi-truck"></i> Store-to-Store Dispatch
+            </button>
+            <button @click="transferTab = 'receive'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
+              :class="transferTab === 'receive' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+              <i class="bi bi-shield-check"></i> Inbound Receive
+            </button>
+            <button @click="transferTab = 'history'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
+              :class="transferTab === 'history' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
+              <i class="bi bi-clock-history"></i> Move History
+            </button>
+          </div>
+
+          <!-- A. Internal Shelf-to-Shelf Move -->
+          <div v-if="transferTab === 'internal'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+            <div class="border-b border-slate-800 pb-2">
+              <h3 class="font-black text-sm text-white flex items-center gap-2">
+                <i class="bi bi-arrow-left-right text-blue-400"></i> Internal Shelf-to-Shelf Relocation
+              </h3>
+              <p class="text-[11px] text-slate-400">Consolidate or rebalance stock between shelf bins inside the dark store</p>
+            </div>
+
+            <form @submit.prevent="submitInternalMove" class="space-y-3 text-xs">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Select Product / Variant</label>
+                <select v-model="internalMoveForm.variantId" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+                  <option v-for="item in inventoryItems" :key="item.variantId" :value="item.variantId">
+                    {{ item.productName }} ({{ item.sku }}) — Cur: {{ item.currentShelf }} [Qty: {{ item.onHandQty }}]
+                  </option>
+                </select>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Source Shelf Bin</label>
+                  <input v-model="internalMoveForm.sourceShelf" required placeholder="e.g. Aisle-01-Rack-01-S01"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Target Shelf Bin</label>
+                  <input v-model="internalMoveForm.targetShelf" required placeholder="e.g. Aisle-01-Rack-02-S02"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Quantity to Move</label>
+                  <input v-model="internalMoveForm.qty" type="number" min="1" required
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Reason / Purpose</label>
+                  <select v-model="internalMoveForm.reason" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+                    <option value="Stock Relocation">Stock Relocation</option>
+                    <option value="Consolidation">Bin Consolidation</option>
+                    <option value="Hygiene Re-rack (Heavy Bottom)">Hygiene Re-rack (Heavy Bottom)</option>
+                    <option value="Damaged Isolation">Damaged Isolation</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" :disabled="isSubmittingTransfer"
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
+                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+                <span v-else><i class="bi bi-check2-circle"></i> Execute Shelf Move</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- B. Store-to-Store Transfer Dispatch -->
+          <div v-else-if="transferTab === 'dispatch'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+            <div class="border-b border-slate-800 pb-2">
+              <h3 class="font-black text-sm text-white flex items-center gap-2">
+                <i class="bi bi-truck text-cyan-400"></i> Inter-Store Transfer Dispatch (Dark Store to Dark Store)
+              </h3>
+              <p class="text-[11px] text-slate-400">Issue transfer order manifest with tamper-proof security seal</p>
+            </div>
+
+            <form @submit.prevent="submitStoreDispatch" class="space-y-3 text-xs">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Destination Dark Store</label>
+                  <select v-model="storeDispatchForm.toStoreId" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+                    <option v-for="s in storesList" :key="s.storeId" :value="s.storeId">{{ s.name }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Item SKU</label>
+                  <select v-model="storeDispatchForm.variantId" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+                    <option v-for="item in inventoryItems" :key="item.variantId" :value="item.variantId">
+                      {{ item.productName }} ({{ item.sku }})
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transfer Quantity</label>
+                  <input v-model="storeDispatchForm.qty" type="number" min="1" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-cyan-400 uppercase mb-1">Security Seal Barcode</label>
+                  <input v-model="storeDispatchForm.sealNo" required placeholder="e.g. SEAL-8891" class="w-full bg-slate-900 border border-cyan-500/50 rounded-lg p-2 text-white font-mono text-xs font-bold">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transporter Fleet</label>
+                  <input v-model="storeDispatchForm.transporter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Vehicle Number</label>
+                  <input v-model="storeDispatchForm.vehicleNo" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs font-mono">
+                </div>
+              </div>
+
+              <button type="submit" :disabled="isSubmittingTransfer"
+                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
+                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+                <span v-else><i class="bi bi-box-seam"></i> Issue Inter-Store Transfer Manifest</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- C. Store-to-Store Inbound Receive -->
+          <div v-else-if="transferTab === 'receive'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+            <div class="border-b border-slate-800 pb-2">
+              <h3 class="font-black text-sm text-white flex items-center gap-2">
+                <i class="bi bi-shield-check text-emerald-400"></i> Inbound Transfer Receiving & Put-away
+              </h3>
+              <p class="text-[11px] text-slate-400">Scan incoming vehicle manifest and verify security seal before placement</p>
+            </div>
+
+            <form @submit.prevent="submitStoreReceive" class="space-y-3 text-xs">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transfer Manifest Number</label>
+                <input v-model="storeReceiveForm.transferNo" required placeholder="e.g. STO-20261102-1234"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] font-bold text-emerald-400 uppercase mb-1">Scan Security Seal</label>
+                  <input v-model="storeReceiveForm.sealNo" required placeholder="Scan seal barcode"
+                    class="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2 text-white font-mono text-xs font-bold">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Put-away Shelf</label>
+                  <input v-model="storeReceiveForm.targetShelf" required placeholder="e.g. Aisle-01-Rack-01-S01"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                </div>
+              </div>
+
+              <button type="submit" :disabled="isSubmittingTransfer"
+                class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
+                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+                <span v-else><i class="bi bi-check-circle-fill"></i> Verify Seal & Inward Restock</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- D. Transfer History -->
+          <div v-else-if="transferTab === 'history'" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
+                <i class="bi bi-clock-history text-blue-400"></i> Movement & Transfer Log
+              </h3>
+              <button @click="fetchTransferHistory" class="text-xs text-blue-400 hover:underline">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div v-if="transferHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
+              No recent movements logged.
+            </div>
+
+            <div v-for="h in transferHistory" :key="h.movementId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-blue-400 font-mono">{{ h.transferNo || `MOVE-#${h.movementId}` }}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
+                  :class="h.status === 'COMPLETED' || h.status === 'RECEIVED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-cyan-500/20 text-cyan-400'">
+                  {{ h.status }}
+                </span>
+              </div>
+              <div class="text-white font-bold">{{ h.productName }} (Qty: {{ h.qty }})</div>
+              <div class="text-[11px] text-slate-400">
+                From: <code class="text-slate-300 font-mono">{{ h.fromShelf }}</code> ➔ To: <code class="text-amber-300 font-mono">{{ h.toShelf }}</code>
+              </div>
+              <div class="text-[10px] text-slate-500 flex items-center justify-between pt-1">
+                <span>By: {{ h.operator || 'Staff' }}</span>
+                <span>{{ new Date(h.date).toLocaleDateString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 8. STEP 3: SHIFTS & ATTENDANCE                           -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'shifts'" class="space-y-3">
+          <!-- Shift Slot Booking Card -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <h3 class="font-black text-sm text-white flex items-center gap-1.5">
+                  <i class="bi bi-calendar2-range text-teal-400"></i> Dark Store Shift Slots
+                </h3>
+                <p class="text-[11px] text-slate-400">Book your upcoming shift slot to ensure guaranteed duty allocation</p>
+              </div>
+              <input v-model="selectedShiftDate" type="date" class="bg-slate-900 border border-slate-700 text-white rounded px-2 py-1 text-xs">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div v-for="slot in shiftSlots" :key="slot.shiftId"
+                class="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 transition space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-black text-teal-400 text-xs">{{ slot.name }}</span>
+                  <span class="text-[10px] bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded font-mono font-bold">{{ slot.hours }} hrs</span>
+                </div>
+                <div class="text-xs text-white font-bold flex items-center gap-1">
+                  <i class="bi bi-clock"></i> {{ slot.time }}
+                </div>
+                <div class="text-[10px] text-amber-400 font-bold bg-amber-500/10 p-1 rounded border border-amber-500/20">
+                  <i class="bi bi-star-fill text-[9px]"></i> {{ slot.incentive }}
+                </div>
+                <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
+                  <span class="text-slate-400">{{ slot.availableSlots }} seats open</span>
+                  <button @click="bookShiftSlot(slot.code)" :disabled="isBookingSlot"
+                    class="bg-teal-600 hover:bg-teal-500 text-slate-950 font-black px-3 py-1 rounded text-xs transition">
+                    Book Slot
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Attendance History Card -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
+                <i class="bi bi-card-checklist text-teal-400"></i> My Shift Attendance History
+              </h3>
+              <button @click="fetchAttendanceHistory" class="text-xs text-teal-400 hover:underline">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div v-if="attendanceHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
+              No past attendance records found.
+            </div>
+
+            <div v-for="att in attendanceHistory" :key="att.dutyId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-black text-white">{{ new Date(att.date).toLocaleDateString() }} ({{ att.shiftSlot }})</span>
+                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
+                  :class="att.approvalStatus === 'APPROVED' || att.approvalStatus === 'ACTIVE' || att.approvalStatus === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
+                  {{ att.approvalStatus }}
+                </span>
+              </div>
+              <div class="text-[11px] text-slate-300">
+                In: <strong class="text-white">{{ att.punchInTime }}</strong> | Out: <strong class="text-white">{{ att.punchOutTime }}</strong> | Total: <strong class="text-amber-400">{{ att.totalHours }} hrs</strong>
+              </div>
+              <div class="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                <span>Manager PIN: <strong class="text-emerald-400 font-mono">{{ att.approvalCode }}</strong></span>
+                <span v-if="att.selfieUrl" class="text-cyan-400 flex items-center gap-1">
+                  <i class="bi bi-camera"></i> Selfie Verified
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- 9. STEP 8: WALLET, INCENTIVES & SETTLEMENT               -->
+        <!-- ======================================================== -->
+        <div v-if="currentTab === 'wallet'" class="space-y-3">
+          <!-- Wallet Balance & Today's Earnings Card -->
+          <div class="bg-gradient-to-br from-emerald-950 via-slate-950 to-slate-950 border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                  <i class="bi bi-wallet2"></i> Worker Settlement Wallet
+                </span>
+                <div class="text-3xl font-black text-white font-mono mt-1">
+                  ₹{{ walletData.availableBalance ? walletData.availableBalance.toFixed(2) : '1,200.00' }}
+                </div>
+                <div class="text-[11px] text-emerald-300">Available to withdraw directly to Bank / UPI</div>
+              </div>
+
+              <div class="text-right">
+                <span class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-black uppercase">
+                  ACTIVE EARNINGS
+                </span>
+                <div class="text-xs font-mono font-bold text-slate-300 mt-1">
+                  Today: <span class="text-emerald-400 font-black">+₹{{ walletData.todayEarnings || 600 }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Today's Earnings Breakdown -->
+            <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 space-y-1.5 text-xs">
+              <div class="text-[11px] font-black text-amber-400 uppercase tracking-wide flex items-center justify-between">
+                <span>Today's Earning Breakdown</span>
+                <span class="text-slate-400 font-normal">Shift: {{ duty.slot || 'General' }}</span>
+              </div>
+              <div class="flex items-center justify-between text-slate-300">
+                <span>Base Daily Shift Wage (8 hrs):</span>
+                <strong class="text-white font-mono">₹{{ walletData.todayBreakdown?.baseDailyWage || 600 }}</strong>
+              </div>
+              <div class="flex items-center justify-between text-slate-300">
+                <span>Order Pick Incentives (₹15/order):</span>
+                <strong class="text-amber-400 font-mono">+₹{{ walletData.todayBreakdown?.pickingIncentive || 0 }}</strong>
+              </div>
+              <div class="flex items-center justify-between text-slate-300">
+                <span>Put-away Task Incentives (₹10/task):</span>
+                <strong class="text-cyan-400 font-mono">+₹{{ walletData.todayBreakdown?.putawayIncentive || 0 }}</strong>
+              </div>
+              <div class="flex items-center justify-between text-slate-300">
+                <span>100% Accuracy Bonus (Rate: {{ walletData.todayBreakdown?.accuracyRate || '99.4%' }}):</span>
+                <strong class="text-purple-400 font-mono">+₹{{ walletData.todayBreakdown?.accuracyBonus || 0 }}</strong>
+              </div>
+              <div class="border-t border-slate-800 pt-1.5 flex items-center justify-between font-bold text-white">
+                <span>Total Earned Today:</span>
+                <span class="text-emerald-400 text-sm font-mono font-black">₹{{ walletData.todayEarnings || 600 }}</span>
+              </div>
+            </div>
+
+            <!-- Linked Payout Account -->
+            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <i class="bi bi-bank text-emerald-400 text-base"></i>
+                <div>
+                  <div class="font-bold text-white">{{ walletData.bankAccount?.bankName || 'State Bank of India' }} ({{ walletData.bankAccount?.accountNo || '••••8821' }})</div>
+                  <div class="text-[10px] text-slate-400">UPI ID: {{ walletData.bankAccount?.upi || '9985699757@paytm' }}</div>
+                </div>
+              </div>
+              <span class="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold">VERIFIED</span>
+            </div>
+
+            <!-- Request Payout Button / Form -->
+            <form @submit.prevent="submitPayoutRequest" class="space-y-2 pt-1">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Withdraw Amount (₹)</label>
+                  <input v-model="payoutRequestForm.amount" type="number" min="100" required
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono font-bold text-xs">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Payout Method</label>
+                  <select v-model="payoutRequestForm.paymentMethod" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                    <option value="UPI">Direct UPI Transfer</option>
+                    <option value="BANK_TRANSFER">Bank NEFT/IMPS</option>
+                    <option value="CASH">Dark Store Cash Desk</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="submit" :disabled="isRequestingPayout"
+                class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5">
+                <span v-if="isRequestingPayout" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
+                <span v-else><i class="bi bi-send-check-fill"></i> Request Instant Settlement</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Payout History Table -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
+                <i class="bi bi-receipt-cutoff text-emerald-400"></i> Settlement Ledger & Payout History
+              </h3>
+              <button @click="fetchPayoutHistory" class="text-xs text-emerald-400 hover:underline">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div v-if="payoutHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
+              No payout settlement records yet.
+            </div>
+
+            <div v-for="p in payoutHistory" :key="p.payoutId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-mono font-black text-emerald-400 text-sm">₹{{ p.amount }}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
+                  :class="p.status === 'PAID' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
+                  {{ p.status }}
+                </span>
+              </div>
+              <div class="text-[11px] text-slate-300">
+                Method: <strong class="text-white">{{ p.paymentMethod }}</strong> | Base: ₹{{ p.basePay }} | Incentive: ₹{{ p.incentive }}
+              </div>
+              <div class="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                <span>Ref: <code class="text-amber-400 font-mono">{{ p.paymentRef || 'PENDING_APPROVAL' }}</code></span>
+                <span>{{ new Date(p.createdAt).toLocaleDateString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </section>
     </main>
 
@@ -949,6 +1390,155 @@
           <div class="text-slate-300">Security Seal: {{ generatedGatepass.securityApprovalStamp }}</div>
           <div class="text-emerald-400 text-[10px]">Ready for vehicle exit at Gate 1</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ==================== WORKER PROFILE MODAL (STEP 4) ==================== -->
+    <div v-if="showProfileModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h3 class="font-black text-sm text-white flex items-center gap-2">
+            <i class="bi bi-person-badge-fill text-amber-400"></i> Worker Profile & KPIs
+          </h3>
+          <button @click="showProfileModal = false" class="text-slate-500 hover:text-white">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <!-- Worker Identity Card -->
+        <div class="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
+          <div class="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-black text-xl">
+            {{ user.name ? user.name.charAt(0).toUpperCase() : 'W' }}
+          </div>
+          <div>
+            <h4 class="font-black text-white text-sm">{{ user.name }}</h4>
+            <div class="text-[11px] text-slate-400 font-mono">{{ user.mobile || '9985699757' }}</div>
+            <span class="text-[9px] px-2 py-0.5 rounded font-black uppercase mt-1 inline-block" :class="getRoleBadgeClass(user.role)">
+              {{ user.role }} • Staff #{{ user.staffId || '101' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Live KPI Scorecard -->
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block">Today Picked</span>
+            <strong class="text-amber-400 font-mono text-sm font-black">{{ walletData.todayBreakdown?.completedPicksCount || 18 }}</strong>
+          </div>
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block">Avg Speed</span>
+            <strong class="text-cyan-400 font-mono text-sm font-black">72s</strong>
+          </div>
+          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+            <span class="text-[10px] text-slate-400 block">Accuracy</span>
+            <strong class="text-emerald-400 font-mono text-sm font-black">{{ walletData.todayBreakdown?.accuracyRate || '99.4%' }}</strong>
+          </div>
+        </div>
+
+        <!-- Bank & UPI Account -->
+        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1">
+          <div class="text-[10px] font-black text-slate-400 uppercase">Settlement Bank & UPI</div>
+          <div class="font-bold text-white">{{ walletData.bankAccount?.bankName || 'HDFC Bank' }} ({{ walletData.bankAccount?.accountNo || '••••4491' }})</div>
+          <div class="text-[11px] text-emerald-400 font-mono">UPI: {{ walletData.bankAccount?.upi || '9985699757@paytm' }}</div>
+        </div>
+
+        <button @click="showProfileModal = false" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-lg text-xs">
+          Close Profile
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== SALARY & RATES NOTICE MODAL (STEP 2) ==================== -->
+    <div v-if="showSalaryNoticeModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-3.5 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h3 class="font-black text-sm text-white flex items-center gap-2">
+            <i class="bi bi-cash-stack text-emerald-400"></i> Dark Store Wage Policy
+          </h3>
+          <button @click="showSalaryNoticeModal = false" class="text-slate-500 hover:text-white">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <div class="space-y-2 text-xs">
+          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="font-bold text-white">Daily Base Shift Pay</div>
+              <div class="text-[10px] text-slate-400">8-hour shift with duty approval</div>
+            </div>
+            <span class="text-emerald-400 font-mono font-black text-sm">₹600 / Day</span>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="font-bold text-white">Order Picking Incentive</div>
+              <div class="text-[10px] text-slate-400">Per order picked within 60-90s</div>
+            </div>
+            <span class="text-amber-400 font-mono font-black text-sm">+₹15 / Pick</span>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="font-bold text-white">Put-away Placement Bonus</div>
+              <div class="text-[10px] text-slate-400">Bin-verified putaway tasks</div>
+            </div>
+            <span class="text-cyan-400 font-mono font-black text-sm">+₹10 / Task</span>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="font-bold text-white">100% Accuracy Bonus</div>
+              <div class="text-[10px] text-slate-400">Zero picking errors in shift</div>
+            </div>
+            <span class="text-purple-400 font-mono font-black text-sm">+₹100 / Shift</span>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div class="font-bold text-rose-400">Damage / Shortage Penalty</div>
+              <div class="text-[10px] text-slate-400">Unreported damaged stock</div>
+            </div>
+            <span class="text-rose-400 font-mono font-black text-sm">-₹50 / item</span>
+          </div>
+        </div>
+
+        <button @click="showSalaryNoticeModal = false" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2 rounded-lg text-xs uppercase">
+          Understood & Acknowledged
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== PICKER HANDOVER SLIP MODAL (STEP 5) ==================== -->
+    <div v-if="completedPickHandover" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-950 border border-amber-500/50 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-center">
+        <div class="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-3xl">
+          <i class="bi bi-check-circle-fill"></i>
+        </div>
+
+        <div>
+          <span class="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black uppercase">
+            HANDOVER TO PACKER BAY
+          </span>
+          <h3 class="font-black text-lg text-white mt-1">Order #{{ completedPickHandover.orderId }} Picked!</h3>
+          <p class="text-xs text-slate-400">Deliver tote bag to Packer Bay for verification & bagging</p>
+        </div>
+
+        <!-- Handover Bay Destination Card -->
+        <div class="p-3 bg-slate-900 border-2 border-dashed border-amber-500/40 rounded-xl space-y-2">
+          <div class="text-slate-400 text-xs font-bold uppercase">Destination Staging Bay</div>
+          <div class="text-3xl font-black text-amber-400 font-mono tracking-wider">
+            {{ completedPickHandover.handoverBay }}
+          </div>
+          <div class="text-[11px] font-mono text-slate-300">
+            Handover Code: <strong class="text-white">{{ completedPickHandover.handoverCode }}</strong>
+          </div>
+          <div class="text-[10px] text-slate-500">Total Items in Crate: {{ completedPickHandover.totalItems }}</div>
+        </div>
+
+        <button @click="completedPickHandover = null"
+          class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20">
+          Handover Complete (Auto-Assign Next Order)
+        </button>
       </div>
     </div>
 

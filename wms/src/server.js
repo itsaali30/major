@@ -13,6 +13,9 @@ const inwardRoutes = require('./routes/inward.routes');
 const packerRoutes = require('./routes/packer.routes');
 const managerRoutes = require('./routes/manager.routes');
 const auditRoutes = require('./routes/audit.routes');
+const transferRoutes = require('./routes/transfer.routes');
+const walletRoutes = require('./routes/wallet.routes');
+const shiftRoutes = require('./routes/shift.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -42,6 +45,9 @@ app.use('/api/inward', inwardRoutes);
 app.use('/api/packer', packerRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/transfer', transferRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/shifts', shiftRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -140,6 +140,7 @@ model ShiftAssignments {
   StaffID      Int
   ShiftID      Int
   Date         DateTime?
+  SlotName     String?
   Status       String?
 }
 
@@ -339,7 +340,13 @@ model StockMovements {
   ToShelf       String?
   Qty           Int?
   Type          String?
-  Date          DateTime?
+  TransferNo    String?
+  Transporter   String?
+  VehicleNo     String?
+  SealNo        String?
+  Reason        String?
+  Status        String?   @default("COMPLETED")
+  Date          DateTime? @default(now())
   CreatedBy     Int?
   CreatedByName String?
 }

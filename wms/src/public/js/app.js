@@ -73,6 +73,52 @@ const app = createApp({
     // 6. Audit Trail State
     const auditLogs = ref([]);
 
+    // 7. Worker Profile & Salary Notice Modals
+    const showProfileModal = ref(false);
+    const showSalaryNoticeModal = ref(false);
+    const completedPickHandover = ref(null);
+
+    // 8. Step 7: Transfer / Move State
+    const transferTab = ref('internal'); // 'internal' | 'dispatch' | 'receive' | 'history'
+    const inventoryItems = ref([]);
+    const warehouseShelves = ref([]);
+    const storesList = ref([]);
+    const internalMoveForm = reactive({ variantId: '', sourceShelf: '', targetShelf: '', qty: 1, reason: 'Stock Relocation' });
+    const storeDispatchForm = reactive({ toStoreId: '', variantId: '', qty: 10, transporter: 'Zepto Dark Logistics Fleet', vehicleNo: 'MH-04-AB-1234', sealNo: 'SEAL-8891', reason: 'Inter-Store Inventory Balancing' });
+    const storeReceiveForm = reactive({ transferNo: '', sealNo: '', targetShelf: 'Aisle-01-Rack-01-S01' });
+    const transferHistory = ref([]);
+    const isSubmittingTransfer = ref(false);
+
+    // 9. Step 3: Shifts & Attendance State
+    const shiftSlots = ref([]);
+    const attendanceHistory = ref([]);
+    const selectedShiftDate = ref(new Date().toISOString().slice(0, 10));
+    const isBookingSlot = ref(false);
+
+    // 10. Step 8: Wallet, Incentives & Settlement State
+    const walletData = ref({
+      availableBalance: 1250,
+      todayEarnings: 600,
+      todayBreakdown: {
+        baseDailyWage: 600,
+        isDutyActive: true,
+        completedPicksCount: 0,
+        pickingRate: 15.0,
+        pickingIncentive: 0,
+        completedPutawayCount: 0,
+        putawayRate: 10.0,
+        putawayIncentive: 0,
+        accuracyBonus: 0,
+        accuracyRate: '99.4%'
+      },
+      totalWithdrawn: 0,
+      pendingSettlement: 0,
+      bankAccount: { bankName: 'HDFC Bank', accountNo: '••••4491', ifsc: 'HDFC0001020', upi: '9985699757@paytm' }
+    });
+    const payoutHistory = ref([]);
+    const payoutRequestForm = reactive({ amount: 500, paymentMethod: 'UPI' });
+    const isRequestingPayout = ref(false);
+
     // Toast Notification helper
     function showToast(msg, type = 'success') {
       toastMessage.value = msg;
@@ -468,16 +514,29 @@ const app = createApp({
     async function completePickOrder() {
       if (!pickerTask.value) return;
       try {
+        const orderId = pickerTask.value.orderId;
+        const pickListId = pickerTask.value.pickListId;
+        const totalItems = pickerTask.value.totalItems || pickerTask.value.items?.length || 1;
+
         const res = await API.request('/api/picker/complete-pick', {
           method: 'POST',
-          body: JSON.stringify({ pickListId: pickerTask.value.pickListId })
+          body: JSON.stringify({ pickListId })
         });
 
         if (res.success) {
           showToast(res.message, 'success');
+          completedPickHandover.value = {
+            orderId,
+            pickListId,
+            handoverBay: 'BAY-0' + ((orderId % 3) + 1),
+            totalItems,
+            time: new Date().toLocaleTimeString(),
+            handoverCode: `HO-ORD-${orderId}`
+          };
           pickerTask.value = null;
+          fetchWalletSummary();
           // Trigger next task fetch
-          setTimeout(fetchPickerTask, 800);
+          setTimeout(fetchPickerTask, 1200);
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -789,12 +848,191 @@ const app = createApp({
       } catch (e) {}
     }
 
+    // =========================================================
+    // 7. STEP 7: TRANSFER & MOVE (INTERNAL & STORE-TO-STORE)
+    // =========================================================
+    async function fetchTransferData() {
+      try {
+        const res = await API.request('/api/transfer/inventory');
+        inventoryItems.value = res.items || [];
+        warehouseShelves.value = res.shelves || [];
+        storesList.value = res.stores || [];
+        if (inventoryItems.value.length > 0 && !internalMoveForm.variantId) {
+          internalMoveForm.variantId = inventoryItems.value[0].variantId;
+          internalMoveForm.sourceShelf = inventoryItems.value[0].currentShelf;
+          internalMoveForm.targetShelf = warehouseShelves.value[1] || 'Aisle-01-Rack-02-S01';
+          storeDispatchForm.variantId = inventoryItems.value[0].variantId;
+          if (storesList.value.length > 1) {
+            storeDispatchForm.toStoreId = storesList.value[1].storeId;
+          }
+        }
+        fetchTransferHistory();
+      } catch (e) {
+        console.warn('Transfer data fetch error:', e);
+      }
+    }
+
+    async function submitInternalMove() {
+      if (!internalMoveForm.variantId || !internalMoveForm.sourceShelf || !internalMoveForm.targetShelf) {
+        showToast('Please specify item, source shelf, and target shelf.', 'error');
+        return;
+      }
+      isSubmittingTransfer.value = true;
+      try {
+        const res = await API.request('/api/transfer/internal-shelf', {
+          method: 'POST',
+          body: JSON.stringify(internalMoveForm)
+        });
+        if (res.success) {
+          showToast(res.message, 'success');
+          fetchTransferData();
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        isSubmittingTransfer.value = false;
+      }
+    }
+
+    async function submitStoreDispatch() {
+      if (!storeDispatchForm.toStoreId || !storeDispatchForm.variantId || !storeDispatchForm.sealNo) {
+        showToast('Please fill all dispatch fields including security seal.', 'error');
+        return;
+      }
+      isSubmittingTransfer.value = true;
+      try {
+        const res = await API.request('/api/transfer/store-dispatch', {
+          method: 'POST',
+          body: JSON.stringify(storeDispatchForm)
+        });
+        if (res.success) {
+          showToast(res.message, 'success');
+          storeReceiveForm.transferNo = res.manifest?.transferNo || '';
+          storeReceiveForm.sealNo = res.manifest?.sealNo || '';
+          fetchTransferHistory();
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        isSubmittingTransfer.value = false;
+      }
+    }
+
+    async function submitStoreReceive() {
+      if (!storeReceiveForm.transferNo || !storeReceiveForm.sealNo || !storeReceiveForm.targetShelf) {
+        showToast('Enter Transfer No, verify Seal No, and target shelf.', 'error');
+        return;
+      }
+      isSubmittingTransfer.value = true;
+      try {
+        const res = await API.request('/api/transfer/store-receive', {
+          method: 'POST',
+          body: JSON.stringify(storeReceiveForm)
+        });
+        if (res.success) {
+          showToast(res.message, 'success');
+          fetchTransferHistory();
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        isSubmittingTransfer.value = false;
+      }
+    }
+
+    async function fetchTransferHistory() {
+      try {
+        const res = await API.request('/api/transfer/history');
+        transferHistory.value = res.history || [];
+      } catch (e) {}
+    }
+
+    // =========================================================
+    // 8. STEP 3: SHIFT SLOTS & ATTENDANCE HISTORY
+    // =========================================================
+    async function fetchShiftSlots() {
+      try {
+        const res = await API.request('/api/shifts/slots');
+        shiftSlots.value = res.slots || [];
+      } catch (e) {}
+    }
+
+    async function bookShiftSlot(slotCode) {
+      isBookingSlot.value = true;
+      try {
+        const res = await API.request('/api/shifts/book', {
+          method: 'POST',
+          body: JSON.stringify({ slotCode, date: selectedShiftDate.value })
+        });
+        if (res.success) {
+          showToast(res.message, 'success');
+          fetchAttendanceHistory();
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        isBookingSlot.value = false;
+      }
+    }
+
+    async function fetchAttendanceHistory() {
+      try {
+        const res = await API.request('/api/shifts/my-history');
+        attendanceHistory.value = res.history || [];
+      } catch (e) {}
+    }
+
+    // =========================================================
+    // 9. STEP 8: WALLET, INCENTIVES & SETTLEMENT
+    // =========================================================
+    async function fetchWalletSummary() {
+      try {
+        const res = await API.request('/api/wallet/summary');
+        if (res.success && res.wallet) {
+          walletData.value = res.wallet;
+        }
+      } catch (e) {}
+    }
+
+    async function submitPayoutRequest() {
+      if (!payoutRequestForm.amount || payoutRequestForm.amount < 100) {
+        showToast('Minimum payout amount is ₹100', 'error');
+        return;
+      }
+      isRequestingPayout.value = true;
+      try {
+        const res = await API.request('/api/wallet/request-payout', {
+          method: 'POST',
+          body: JSON.stringify(payoutRequestForm)
+        });
+        if (res.success) {
+          showToast(res.message, 'success');
+          fetchWalletSummary();
+          fetchPayoutHistory();
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        isRequestingPayout.value = false;
+      }
+    }
+
+    async function fetchPayoutHistory() {
+      try {
+        const res = await API.request('/api/wallet/history');
+        payoutHistory.value = res.history || [];
+      } catch (e) {}
+    }
+
     // Load content for active tab
     function loadTabContent() {
       if (currentTab.value === 'picker') fetchPickerTask();
       else if (currentTab.value === 'putter') fetchPutawayTasks();
       else if (currentTab.value === 'inward') fetchPurchaseOrders();
       else if (currentTab.value === 'packer') fetchPackerOrders();
+      else if (currentTab.value === 'transfer') fetchTransferData();
+      else if (currentTab.value === 'shifts') { fetchShiftSlots(); fetchAttendanceHistory(); }
+      else if (currentTab.value === 'wallet') { fetchWalletSummary(); fetchPayoutHistory(); }
       else if (currentTab.value === 'manager') {
         fetchFloorStatus();
         fetchDiscrepancies();
@@ -914,6 +1152,37 @@ const app = createApp({
       rtvForm,
       generatedGatepass,
       auditLogs,
+      showProfileModal,
+      showSalaryNoticeModal,
+      completedPickHandover,
+      transferTab,
+      inventoryItems,
+      warehouseShelves,
+      storesList,
+      internalMoveForm,
+      storeDispatchForm,
+      storeReceiveForm,
+      transferHistory,
+      isSubmittingTransfer,
+      fetchTransferData,
+      submitInternalMove,
+      submitStoreDispatch,
+      submitStoreReceive,
+      fetchTransferHistory,
+      shiftSlots,
+      attendanceHistory,
+      selectedShiftDate,
+      isBookingSlot,
+      fetchShiftSlots,
+      bookShiftSlot,
+      fetchAttendanceHistory,
+      walletData,
+      payoutHistory,
+      payoutRequestForm,
+      isRequestingPayout,
+      fetchWalletSummary,
+      submitPayoutRequest,
+      fetchPayoutHistory,
       login,
       quickLogin,
       logout,
