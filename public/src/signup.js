@@ -94,7 +94,13 @@ const Signup = {
       loading: false, error: null, success: null
     };
   },
-  mounted() { this.initGoogleButton(); },
+  mounted() {
+    if (localStorage.getItem('user')) {
+      this.$router.push('/');
+      return;
+    }
+    this.initGoogleButton();
+  },
   methods: {
     initGoogleButton() {
       if (window.google && window.google.accounts) {

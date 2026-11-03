@@ -8,7 +8,7 @@ const { cache } = require('../config/redis');
 const { minioClient, BUCKETS } = require('../config/minio');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 const { triggerAutoAssignment } = require('../services/autoAssign.service');
-const { emitToRole, broadcast } = require('../services/socket.service');
+const { emitToRole, emitToUser, broadcast } = require('../services/socket.service');
 const { logAudit } = require('../config/audit');
 const { emitWarehouseEvent } = require('../config/kafka');
 
@@ -606,6 +606,42 @@ router.post('/duty-toggle', authenticateToken, async (req, res) => {
     }
 
     res.json({ success: true, message: `Duty status updated to ${dutyState.duty}`, duty: dutyState });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Realtime Socket.io Bridge (Admin / Floor Lead broadcast to staff PDA)
+router.post('/socket-broadcast', async (req, res) => {
+  try {
+    const { event, userId, role, data, message, reason } = req.body;
+    const payload = {
+      userId: userId ? Number(userId) : undefined,
+      message: message || '',
+      reason: reason || '',
+      timestamp: new Date().toISOString(),
+      ...(data || {})
+    };
+
+    if (userId) {
+      emitToUser(Number(userId), event, payload);
+    }
+    if (role) {
+      emitToRole(role, event, payload);
+    }
+    broadcast(event, payload);
+
+    // If force_checkout, update redis duty state
+    if (userId && (event === 'wms:force_checkout' || event === 'wms:punch_out')) {
+      await cache.set(`wms:duty:${userId}`, {
+        duty: 'OFF',
+        onBreak: false,
+        slot: null,
+        punchOutTime: new Date().toLocaleTimeString()
+      }, 86400);
+    }
+
+    res.json({ success: true, broadcasted: true, event, payload });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -69,15 +69,13 @@ const AdminDutyRecords = {
         </div>
       </div>
 
-      <!-- Filters Row -->
+      <!-- Filters & Grouping Row -->
       <div class="card shadow-sm mb-3">
         <div class="card-body py-2">
-          <div class="row g-2 align-items-center">
-            <div class="col-auto">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2">
               <span class="small font-weight-bold text-muted">Filter Role:</span>
-            </div>
-            <div class="col-auto">
-              <select v-model="selectedRole" @change="fetchDutyRecords" class="form-select form-select-sm">
+              <select v-model="selectedRole" @change="fetchDutyRecords" class="form-select form-select-sm" style="width: auto;">
                 <option value="all">All Roles</option>
                 <option value="picker">Picker</option>
                 <option value="putter">Put-away / Loader</option>
@@ -85,12 +83,9 @@ const AdminDutyRecords = {
                 <option value="packer">Packer & Sorter</option>
                 <option value="manager">Manager</option>
               </select>
-            </div>
-            <div class="col-auto">
-              <span class="small font-weight-bold text-muted">Status:</span>
-            </div>
-            <div class="col-auto">
-              <select v-model="selectedStatus" @change="fetchDutyRecords" class="form-select form-select-sm">
+
+              <span class="small font-weight-bold text-muted ms-2">Status:</span>
+              <select v-model="selectedStatus" @change="fetchDutyRecords" class="form-select form-select-sm" style="width: auto;">
                 <option value="all">All Statuses</option>
                 <option value="PENDING_APPROVAL">Pending Approval</option>
                 <option value="APPROVED">Approved (Awaiting PIN Entry)</option>
@@ -98,11 +93,16 @@ const AdminDutyRecords = {
                 <option value="COMPLETED">Completed</option>
               </select>
             </div>
+
+            <div class="text-muted small">
+              <i class="bi bi-info-circle text-primary"></i>
+              <strong>Tip:</strong> Har employee ka 1 single unique row hai. Kisi bhi <strong>row pe click karein</strong> taaki us employee ki complete shift details breakdown dikhe.
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Records Table -->
+      <!-- Records Table (Deduplicated Unique Employee Rows) -->
       <div class="card shadow-sm">
         <div class="card-body p-0">
           <div class="table-responsive">
@@ -111,12 +111,12 @@ const AdminDutyRecords = {
                 <tr>
                   <th>Employee</th>
                   <th>Role</th>
-                  <th>Shift Slot</th>
+                  <th>Current Shift</th>
                   <th>Selfie / Biometric</th>
                   <th>Punch-In Time</th>
-                  <th>Approval Status</th>
-                  <th>4-Digit Approval Code</th>
-                  <th>Manager Action</th>
+                  <th>Status</th>
+                  <th>Approval PIN</th>
+                  <th class="text-end pe-4">Manager Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,13 +127,30 @@ const AdminDutyRecords = {
                 </tr>
                 <tr v-else-if="records.length === 0">
                   <td colspan="8" class="text-center py-4 text-muted">
-                    No duty records found for the selected filter.
+                    No staff records found for the selected filter.
                   </td>
                 </tr>
-                <tr v-for="rec in records" :key="rec.dutyId" :class="{'table-warning': rec.approvalStatus === 'PENDING_APPROVAL'}">
+                <tr v-for="rec in records" :key="rec.userId"
+                    @click="openDetailModal(rec)"
+                    class="cursor-pointer"
+                    :class="{'table-warning': rec.approvalStatus === 'PENDING_APPROVAL', 'table-success-subtle': rec.approvalStatus === 'ACTIVE'}"
+                    style="cursor: pointer;">
                   <td>
-                    <div class="font-weight-bold">{{ rec.employeeName }}</div>
-                    <small class="text-muted font-monospace">{{ rec.employeeMobile }}</small>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-center font-weight-bold"
+                           style="width: 36px; height: 36px; min-width: 36px; font-size: 14px; text-transform: uppercase;">
+                        {{ rec.employeeName ? rec.employeeName.charAt(0) : 'E' }}
+                      </div>
+                      <div>
+                        <div class="font-weight-bold text-dark d-flex align-items-center gap-1.5">
+                          {{ rec.employeeName }}
+                          <span v-if="rec.totalShifts && rec.totalShifts > 1" class="badge bg-secondary-subtle text-secondary border px-1.5 py-0.5 rounded-pill" style="font-size: 10px;">
+                            {{ rec.totalShifts }} records
+                          </span>
+                        </div>
+                        <small class="text-muted font-monospace">{{ rec.employeeMobile }}</small>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <span class="badge" :class="getRoleBadge(rec.employeeRole)">
@@ -146,9 +163,9 @@ const AdminDutyRecords = {
                     </span>
                   </td>
                   <td>
-                    <div v-if="rec.selfieUrl">
-                      <a :href="rec.selfieUrl" target="_blank">
-                        <img :src="rec.selfieUrl" class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;">
+                    <div v-if="rec.selfieUrl" @click.stop>
+                      <a :href="rec.selfieUrl" target="_blank" title="View Full Selfie Photo">
+                        <img :src="rec.selfieUrl" class="rounded-circle border shadow-sm" style="width: 36px; height: 36px; object-fit: cover;">
                       </a>
                     </div>
                     <div v-else class="text-muted small">
@@ -156,8 +173,8 @@ const AdminDutyRecords = {
                     </div>
                   </td>
                   <td>
-                    <div class="small font-monospace">{{ rec.punchInTime || 'Pending' }}</div>
-                    <small class="text-muted">{{ formatDate(rec.date) }}</small>
+                    <div class="small font-monospace font-weight-bold">{{ rec.punchInTime || 'Pending' }}</div>
+                    <small class="text-muted" style="font-size: 11px;">{{ formatDate(rec.date) }}</small>
                   </td>
                   <td>
                     <span class="badge" :class="getStatusBadge(rec.approvalStatus)">
@@ -173,29 +190,217 @@ const AdminDutyRecords = {
                     </div>
                     <span v-else class="text-muted small">Not Generated</span>
                   </td>
-                  <td>
-                    <!-- If Pending Approval, Show Approve Button -->
-                    <div v-if="rec.approvalStatus === 'PENDING_APPROVAL'">
-                      <button @click="openApproveModal(rec)" class="btn btn-sm btn-success font-weight-bold">
-                        <i class="bi bi-check-circle"></i> Approve Punch-In (Get 4-Digit PIN)
+                  <td class="text-end pe-3" @click.stop>
+                    <div class="d-inline-flex align-items-center gap-1.5">
+                      <!-- Primary Quick Action -->
+                      <button v-if="rec.approvalStatus === 'PENDING_APPROVAL'"
+                              @click="openApproveModal(rec)"
+                              class="btn btn-sm btn-success font-weight-bold shadow-sm">
+                        <i class="bi bi-check-circle"></i> Approve PIN
                       </button>
-                    </div>
-                    <!-- If Approved & Awaiting Code, Show Code again -->
-                    <div v-else-if="rec.approvalStatus === 'APPROVED'">
-                      <div class="small text-info font-weight-bold">
-                        <i class="bi bi-info-circle"></i> Tell Code: <span class="badge bg-warning text-dark">{{ rec.approvalCode }}</span>
+
+                      <button v-else-if="rec.approvalStatus === 'APPROVED'"
+                              @click="openApproveModal(rec)"
+                              class="btn btn-sm btn-outline-info font-weight-bold">
+                        PIN: {{ rec.approvalCode }}
+                      </button>
+
+                      <button v-else-if="rec.approvalStatus === 'ACTIVE'"
+                              @click="openDetailModal(rec)"
+                              class="btn btn-sm btn-outline-success font-weight-bold">
+                        <i class="bi bi-person-check-fill"></i> Duty Active
+                      </button>
+
+                      <button v-else
+                              @click="openDetailModal(rec)"
+                              class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-eye"></i> Details
+                      </button>
+
+                      <!-- 3-Dot Dropdown Menu (Force Checkout, Force Logout, View Details) -->
+                      <div class="dropdown d-inline-block">
+                        <button class="btn btn-sm btn-light border dropdown-toggle dropdown-toggle-split px-2"
+                                type="button"
+                                :id="'dropdownMenu_' + rec.userId"
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false"
+                                title="More Employee Actions">
+                          <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm" :aria-labelledby="'dropdownMenu_' + rec.userId">
+                          <li>
+                            <h6 class="dropdown-header text-uppercase font-weight-bold" style="font-size: 10px;">
+                              {{ rec.employeeName }} Actions
+                            </h6>
+                          </li>
+                          <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2" href="javascript:void(0)" @click="openDetailModal(rec)">
+                              <i class="bi bi-card-checklist text-primary"></i> View Shift History & Details
+                            </a>
+                          </li>
+                          <li v-if="rec.approvalStatus === 'PENDING_APPROVAL'">
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-success font-weight-bold" href="javascript:void(0)" @click="openApproveModal(rec)">
+                              <i class="bi bi-shield-check"></i> Approve Punch-In (4-Digit Code)
+                            </a>
+                          </li>
+                          <li><hr class="dropdown-divider"></li>
+                          <!-- Force Checkout -->
+                          <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-warning" href="javascript:void(0)" @click="promptForceCheckout(rec)">
+                              <i class="bi bi-box-arrow-right text-warning"></i> Force Checkout (Punch Out)
+                            </a>
+                          </li>
+                          <!-- Force Logout -->
+                          <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-danger" href="javascript:void(0)" @click="promptForceLogout(rec)">
+                              <i class="bi bi-person-x-fill text-danger"></i> Force Logout (Terminate Session)
+                            </a>
+                          </li>
+                        </ul>
                       </div>
-                    </div>
-                    <div v-else-if="rec.approvalStatus === 'ACTIVE'">
-                      <span class="text-success small font-weight-bold"><i class="bi bi-circle-fill" style="font-size: 8px;"></i> Duty Active in WMS</span>
-                    </div>
-                    <div v-else class="text-muted small">
-                      {{ rec.approvalStatus }}
                     </div>
                   </td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== EMPLOYEE SHIFT BREAKDOWN & DETAILS MODAL ==================== -->
+      <div class="modal fade" id="employeeDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-dark text-white">
+              <div class="d-flex align-items-center gap-2.5">
+                <div class="rounded-circle bg-warning text-dark font-weight-bold d-flex align-items-center justify-center fs-5" style="width: 44px; height: 44px;">
+                  {{ detailEmployee?.employeeName ? detailEmployee.employeeName.charAt(0) : 'E' }}
+                </div>
+                <div>
+                  <h5 class="modal-title font-weight-bold mb-0">{{ detailEmployee?.employeeName }}</h5>
+                  <div class="text-white-50 small d-flex align-items-center gap-2">
+                    <span><i class="bi bi-telephone"></i> {{ detailEmployee?.employeeMobile }}</span>
+                    <span>•</span>
+                    <span class="badge" :class="getRoleBadge(detailEmployee?.employeeRole)">{{ detailEmployee?.employeeRole }}</span>
+                    <span>•</span>
+                    <span>Staff ID #{{ detailEmployee?.staffId }}</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-4" v-if="detailEmployee">
+              <!-- Quick Action & Status Banner -->
+              <div class="card bg-light border-0 shadow-sm mb-4">
+                <div class="card-body p-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                  <div>
+                    <span class="text-muted small text-uppercase font-weight-bold d-block">Current Duty Status</span>
+                    <span class="badge fs-6 mt-1" :class="getStatusBadge(detailEmployee.approvalStatus)">
+                      {{ detailEmployee.approvalStatus }}
+                    </span>
+                    <span v-if="detailEmployee.approvalCode" class="ms-2 badge bg-dark text-warning font-monospace fs-6">
+                      PIN: {{ detailEmployee.approvalCode }}
+                    </span>
+                  </div>
+
+                  <!-- Manager Quick Force Action Buttons -->
+                  <div class="d-flex align-items-center gap-2">
+                    <button v-if="detailEmployee.approvalStatus === 'PENDING_APPROVAL'"
+                            @click="openApproveModal(detailEmployee)"
+                            class="btn btn-sm btn-success font-weight-bold">
+                      <i class="bi bi-shield-check"></i> Approve PIN
+                    </button>
+                    <button @click="promptForceCheckout(detailEmployee)"
+                            class="btn btn-sm btn-outline-warning text-dark font-weight-bold">
+                      <i class="bi bi-box-arrow-right"></i> Force Checkout
+                    </button>
+                    <button @click="promptForceLogout(detailEmployee)"
+                            class="btn btn-sm btn-outline-danger font-weight-bold">
+                      <i class="bi bi-person-x-fill"></i> Force Logout
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Full Shift Logs Table for this Employee -->
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="font-weight-bold text-dark mb-0">
+                  <i class="bi bi-clock-history text-primary"></i> Shift Punch Logs & Biometrics ({{ (detailEmployee.history || []).length }} Records)
+                </h6>
+                <small class="text-muted">Chronological order (Newest first)</small>
+              </div>
+
+              <div class="table-responsive border rounded-3">
+                <table class="table table-sm table-striped align-middle mb-0" style="font-size: 13px;">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Shift & Date</th>
+                      <th>Punch-In</th>
+                      <th>Punch-Out</th>
+                      <th>Hours</th>
+                      <th>Selfie</th>
+                      <th>Status</th>
+                      <th>Approval PIN</th>
+                      <th>Approver</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!detailEmployee.history || detailEmployee.history.length === 0">
+                      <td colspan="8" class="text-center py-3 text-muted">No past shifts logged yet.</td>
+                    </tr>
+                    <tr v-for="shift in detailEmployee.history" :key="shift.dutyId">
+                      <td>
+                        <div class="font-weight-bold">{{ shift.shiftSlot }}</div>
+                        <small class="text-muted">{{ formatDate(shift.date) }}</small>
+                      </td>
+                      <td>
+                        <span class="font-monospace font-weight-bold text-dark">{{ shift.punchInTime || '—' }}</span>
+                      </td>
+                      <td>
+                        <span class="font-monospace text-secondary">{{ shift.punchOutTime || 'Active / On Duty' }}</span>
+                      </td>
+                      <td>
+                        <span class="badge bg-light text-dark border font-monospace">
+                          {{ shift.totalHours ? shift.totalHours + ' hrs' : 'In Progress' }}
+                        </span>
+                      </td>
+                      <td>
+                        <div v-if="shift.selfieUrl">
+                          <a :href="shift.selfieUrl" target="_blank" title="Click to view full photo">
+                            <img :src="shift.selfieUrl" class="rounded border" style="width: 32px; height: 32px; object-fit: cover;">
+                          </a>
+                        </div>
+                        <span v-else class="text-muted small">None</span>
+                      </td>
+                      <td>
+                        <span class="badge" :class="getStatusBadge(shift.approvalStatus)">
+                          {{ shift.approvalStatus }}
+                        </span>
+                      </td>
+                      <td>
+                        <span v-if="shift.approvalCode" class="badge bg-dark text-warning font-monospace">
+                          {{ shift.approvalCode }}
+                        </span>
+                        <span v-else class="text-muted small">—</span>
+                      </td>
+                      <td>
+                        <small class="text-muted">{{ shift.approvedByName || 'Auto/Pending' }}</small>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Extra Notes / Details -->
+              <div v-if="detailEmployee.notes" class="mt-3 p-2.5 bg-light rounded border text-muted small font-monospace">
+                <strong>Notes / Audit:</strong> {{ detailEmployee.notes }}
+              </div>
+            </div>
+
+            <div class="modal-footer bg-light">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
           </div>
         </div>
       </div>
@@ -245,8 +450,10 @@ const AdminDutyRecords = {
       selectedStatus: 'all',
       loading: false,
       selectedDuty: null,
+      detailEmployee: null,
       approvalModalCode: '4821',
-      modalInstance: null
+      modalInstance: null,
+      detailModalInstance: null
     };
   },
   mounted() {
@@ -254,6 +461,10 @@ const AdminDutyRecords = {
     const modalEl = document.getElementById('approveDutyModal');
     if (modalEl && window.bootstrap) {
       this.modalInstance = new bootstrap.Modal(modalEl);
+    }
+    const detailEl = document.getElementById('employeeDetailModal');
+    if (detailEl && window.bootstrap) {
+      this.detailModalInstance = new bootstrap.Modal(detailEl);
     }
   },
   methods: {
@@ -267,11 +478,29 @@ const AdminDutyRecords = {
         if (res.data.success) {
           this.records = res.data.records;
           this.counts = res.data.counts;
+
+          // If detail modal is open, refresh detail employee state
+          if (this.detailEmployee) {
+            const updated = this.records.find(r => r.userId === this.detailEmployee.userId);
+            if (updated) this.detailEmployee = updated;
+          }
         }
       } catch (err) {
         console.error('Error fetching duty records:', err);
       } finally {
         this.loading = false;
+      }
+    },
+    openDetailModal(employee) {
+      this.detailEmployee = employee;
+      if (!this.detailModalInstance) {
+        const detailEl = document.getElementById('employeeDetailModal');
+        if (detailEl && window.bootstrap) {
+          this.detailModalInstance = new bootstrap.Modal(detailEl);
+        }
+      }
+      if (this.detailModalInstance) {
+        this.detailModalInstance.show();
       }
     },
     generateRandomCode() {
@@ -280,6 +509,12 @@ const AdminDutyRecords = {
     openApproveModal(duty) {
       this.selectedDuty = duty;
       this.generateRandomCode();
+      if (!this.modalInstance) {
+        const modalEl = document.getElementById('approveDutyModal');
+        if (modalEl && window.bootstrap) {
+          this.modalInstance = new bootstrap.Modal(modalEl);
+        }
+      }
       if (this.modalInstance) this.modalInstance.show();
     },
     async submitApproval() {
@@ -300,6 +535,50 @@ const AdminDutyRecords = {
         }
       } catch (err) {
         alert('Error approving duty: ' + (err.response?.data?.error || err.message));
+      }
+    },
+    async promptForceCheckout(employee) {
+      const confirmed = confirm(`Kya aap sure hain ${employee.employeeName} ko Force Checkout (Duty punch-out) karne ke liye?`);
+      if (!confirmed) return;
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.post('/api/admin/duty-force-checkout', {
+          dutyId: employee.dutyId,
+          userId: employee.userId,
+          reason: 'Manual force checkout from admin dashboard'
+        }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+
+        if (res.data.success) {
+          alert(`✅ ${res.data.message}`);
+          this.fetchDutyRecords();
+        }
+      } catch (err) {
+        alert('Error during force checkout: ' + (err.response?.data?.error || err.message));
+      }
+    },
+    async promptForceLogout(employee) {
+      const confirmed = confirm(`⚠️ Warning: Kya aap sure hain ${employee.employeeName} ko Force Logout karne ke liye? Employee ka active session terminate ho jayega.`);
+      if (!confirmed) return;
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.post('/api/admin/duty-force-logout', {
+          userId: employee.userId,
+          dutyId: employee.dutyId,
+          reason: 'Manager terminated employee active session'
+        }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+
+        if (res.data.success) {
+          alert(`✅ ${res.data.message}`);
+          this.fetchDutyRecords();
+        }
+      } catch (err) {
+        alert('Error during force logout: ' + (err.response?.data?.error || err.message));
       }
     },
     getRoleBadge(role) {

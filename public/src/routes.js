@@ -28,7 +28,9 @@ const routes = [
   { path: '/admin/stockmanagement', component: AdminInventory, meta: { title: 'Stock Management' } },
   { path: '/admin/purchase/:section?', component: AdminPurchase, meta: { title: 'Purchase Management' } },
   { path: '/admin/duty-records', component: AdminDutyRecords, meta: { title: 'Staff Duty Records & Approvals' } },
-  { path: '/admin/payouts', component: AdminPayouts, meta: { title: 'Staff Payouts' } }
+  { path: '/admin/payouts', component: AdminPayouts, meta: { title: 'Staff Payouts' } },
+  { path: '/inwms', redirect: '/' },
+  { path: '/wms', redirect: '/' }
 ];
 
 // Export for ES modules (if needed)

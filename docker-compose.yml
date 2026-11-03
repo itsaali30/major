@@ -49,6 +49,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    volumes:
+      - ./server.js:/app/server.js
+      - ./public:/app/public
     environment:
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/ecommerce_db?schema=public
@@ -73,6 +76,8 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
+    volumes:
+      - ./wms/src:/app/src
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/ecommerce_db?schema=public

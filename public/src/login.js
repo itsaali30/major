@@ -37,7 +37,13 @@ const Login = {
     </div>
   `,
   data() { return { form: { Mobile: '', Password: '' }, loading: false, error: null }; },
-  mounted() { this.initGoogleButton(); },
+  mounted() {
+    if (localStorage.getItem('user')) {
+      this.$router.push('/');
+      return;
+    }
+    this.initGoogleButton();
+  },
   methods: {
     initGoogleButton() {
       if (window.google && window.google.accounts) { this.renderGoogleButton(); }

@@ -156,7 +156,8 @@ const app = createApp({
     let socket = null;
     function initWebSocket() {
       try {
-        socket = io();
+        const socketUrl = window.location.port === '3001' ? undefined : `${window.location.protocol}//${window.location.hostname}:3001`;
+        socket = socketUrl ? io(socketUrl) : io();
 
         socket.on('connect', () => {
           isSocketConnected.value = true;
@@ -181,6 +182,48 @@ const app = createApp({
           fetchPackerOrders();
         });
 
+        // Real-time Force Checkout from Admin / Floor Lead
+        socket.on('wms:force_checkout', (data) => {
+          console.log('⚡ Socket event wms:force_checkout received:', data);
+          if (!user.value.userId || (data && data.userId == user.value.userId)) {
+            duty.duty = 'OFF';
+            duty.onBreak = false;
+            duty.punchOutTime = new Date().toLocaleTimeString();
+            showToast(`⚠️ Force Checkout: ${data?.message || 'Floor Manager has checked you out.'}`, 'error');
+            if (pickerTask.value) pickerTask.value = null;
+            activeWorkflowStep.value = 'step4';
+            dashboardSegment.value = 'tasks';
+            fetchWalletSummary();
+          }
+          if (currentTab.value === 'manager') fetchFloorStatus();
+        });
+
+        // Real-time Punch Out
+        socket.on('wms:punch_out', (data) => {
+          console.log('⚡ Socket event wms:punch_out received:', data);
+          if (!user.value.userId || (data && data.userId == user.value.userId)) {
+            duty.duty = 'OFF';
+            duty.onBreak = false;
+            duty.punchOutTime = new Date().toLocaleTimeString();
+            showToast(`⚠️ Punch-out recorded: Duty is now OFF.`, 'warning');
+            if (pickerTask.value) pickerTask.value = null;
+            activeWorkflowStep.value = 'step4';
+          }
+          if (currentTab.value === 'manager') fetchFloorStatus();
+        });
+
+        // Real-time Force Logout
+        socket.on('wms:force_logout', (data) => {
+          console.log('⚡ Socket event wms:force_logout received:', data);
+          if (!user.value.userId || (data && data.userId == user.value.userId)) {
+            showToast(`⛔ Force Logout: ${data?.message || 'Session terminated by Floor Manager.'}`, 'error');
+            setTimeout(() => {
+              logout();
+            }, 800);
+          }
+          if (currentTab.value === 'manager') fetchFloorStatus();
+        });
+
         // Manager floor events
         socket.on('wms:attendance_update', () => {
           if (currentTab.value === 'manager') fetchFloorStatus();
@@ -202,7 +245,12 @@ const app = createApp({
     // Authentication
     async function checkAuth() {
       const token = API.getToken();
-      if (!token) return;
+      if (!token) {
+        isLoggedIn.value = false;
+        activeWorkflowStep.value = 'step1';
+        syncRouteHash();
+        return;
+      }
 
       try {
         const res = await API.request('/api/auth/me');
@@ -215,10 +263,16 @@ const app = createApp({
             socket.emit('join', { userId: user.value.userId, role: user.value.role });
           }
           loadTabContent();
+
+          // Route access: if logged in, access in WMS goes to Home (step4)
+          handleRouteAccess();
         }
       } catch (err) {
         API.setToken(null);
         API.setUser(null);
+        isLoggedIn.value = false;
+        activeWorkflowStep.value = 'step1';
+        syncRouteHash();
       }
     }
 
@@ -253,6 +307,9 @@ const app = createApp({
           }
           showToast(`Welcome ${user.value.name}! Terminal active.`);
           loadTabContent();
+
+          // Route access: if logged in, route directly to Home (step4)
+          navigateToStep('step4');
         }
       } catch (err) {
         loginError.value = err.message;
@@ -281,7 +338,11 @@ const app = createApp({
       API.setUser(null);
       isLoggedIn.value = false;
       user.value = {};
+      duty.duty = 'OFF';
+      duty.onBreak = false;
+      activeWorkflowStep.value = 'step1';
       authMode.value = 'login';
+      syncRouteHash();
       showToast('Logged out from WMS Terminal.');
     }
 
@@ -308,6 +369,9 @@ const app = createApp({
           }
           showToast(`Welcome ${user.value.name}! Staff account created.`);
           loadTabContent();
+
+          // Route access: if logged in, go to Home (step4)
+          navigateToStep('step4');
         }
       } catch (err) {
         authError.value = err.message;
@@ -1102,12 +1166,229 @@ const app = createApp({
       }
     });
 
+    // ==========================================
+    // WORKFLOW STEPS & NEW STYLE UI STATE (from Design Mockup)
+    // ==========================================
+    const activeWorkflowStep = ref('step4'); // 'step1' | 'step2' | 'step3' | 'step4' | 'active_task'
+    const uiViewMode = ref(window.innerWidth >= 768 ? 'desktop' : 'mobile'); // 'mobile' | 'desktop'
+    const bottomNav = ref('tasks'); // 'home' | 'packs' | 'tasks' | 'profile'
+    const dashboardSegment = ref('tasks'); // 'tasks' | 'profile'
+
+    // Step 2 State: Manager Approval & Dual Sync
+    const managerApprovalOtp = ref('8842');
+    const pinDigits = reactive(['4', '0', '', '']);
+    const isRequestingPunchIn = ref(false);
+    const punchInStatusText = ref('Selfie + GPS Geofence Check (50m radius scan badge)');
+
+    // Step 3 State: Weekday strip & Calendar
+    const selectedWeekIndex = ref(1); // Mon 31 (Selected)
+    const mockWeekDays = reactive([
+      { day: 'Sun', date: '30' },
+      { day: 'Mon', date: '31' },
+      { day: 'Tue', date: '2' },
+      { day: 'Wed', date: '3' },
+      { day: 'Thu', date: '4' },
+      { day: 'Fri', date: '5' },
+      { day: 'Sat', date: '6' }
+    ]);
+    const selectedShiftSlotName = ref('Morning Shift (6:00 AM - 2:00 PM)');
+
+    const mockCalendarDays = ref([
+      { day: 27, inactive: true }, { day: 28, inactive: true }, { day: 29, inactive: true }, { day: 30, inactive: true },
+      { day: 1 }, { day: 2 }, { day: 3 }, { day: 4 }, { day: 5 }, { day: 6 }, { day: 7 }, { day: 8 }, { day: 9 }, { day: 10 },
+      { day: 11 }, { day: 12 }, { day: 13 }, { day: 14 }, { day: 15 }, { day: 16 }, { day: 17 }, { day: 18 }, { day: 19 }, { day: 20 },
+      { day: 21 }, { day: 22 }, { day: 23 }, { day: 24 }, { day: 25, worked: true }, { day: 26 }, { day: 27 }, { day: 28 }, { day: 29 }, { day: 30 },
+      { day: 31, worked: true }, { day: 1, inactive: true }
+    ]);
+
+    function onDigitInput(idx, event) {
+      const val = event.target.value;
+      if (val && val.length > 0) {
+        pinDigits[idx] = val.slice(-1);
+        if (idx < 3) {
+          const nextInput = document.getElementById('pinInput_' + (idx + 1));
+          if (nextInput) nextInput.focus();
+        }
+      }
+      dutyVerificationCode.value = pinDigits.join('');
+    }
+
+    function onDigitKeydown(idx, event) {
+      if (event.key === 'Backspace' && !pinDigits[idx] && idx > 0) {
+        const prevInput = document.getElementById('pinInput_' + (idx - 1));
+        if (prevInput) prevInput.focus();
+      }
+    }
+
+    function selectHeroTask(taskName) {
+      currentTab.value = taskName;
+      activeWorkflowStep.value = 'active_task';
+      bottomNav.value = 'tasks';
+      if (taskName === 'picker') fetchPickerTask();
+      else if (taskName === 'putter') fetchPutawayTasks();
+      else if (taskName === 'transfer') fetchTransferData();
+      else if (taskName === 'packer') fetchPackerOrders();
+      else if (taskName === 'inward') fetchInwardData();
+    }
+
+    function acceptManagerApproval() {
+      managerApprovalOtp.value = String(Math.floor(1000 + Math.random() * 9000));
+      pinDigits[0] = managerApprovalOtp.value[0];
+      pinDigits[1] = managerApprovalOtp.value[1];
+      pinDigits[2] = managerApprovalOtp.value[2];
+      pinDigits[3] = managerApprovalOtp.value[3];
+      dutyVerificationCode.value = managerApprovalOtp.value;
+      showToast(`Manager Approved! OTP [${managerApprovalOtp.value}] issued to unlock shift.`, 'success');
+    }
+
+    async function submitPinUnlock() {
+      const code = pinDigits.join('');
+      if (code.length < 4) {
+        showToast('Please enter all 4 digits of Manager OTP', 'error');
+        return;
+      }
+      dutyVerificationCode.value = code;
+      if (duty.dutyId) {
+        await submitDutyCodeVerification();
+      } else {
+        duty.duty = 'ON';
+        duty.slot = selectedShiftSlotName.value;
+        duty.punchInTime = new Date().toLocaleTimeString();
+        showToast(`✅ Shift Unlocked! Duty is ACTIVE on floor.`, 'success');
+        activeWorkflowStep.value = 'step4';
+      }
+    }
+
+    // Route Access Guard & Navigation Handler
+    function navigateToStep(step, segment = null) {
+      // Guard: if logged in and trying to access step1 (Auth/Login/Signup), route goes to Home (step4)
+      if (isLoggedIn.value && step === 'step1') {
+        activeWorkflowStep.value = 'step4';
+        bottomNav.value = 'home';
+        if (segment) dashboardSegment.value = segment;
+        syncRouteHash();
+        showToast(`Already logged in as ${user.value.name || user.value.email || 'User'}. Redirected to Home.`, 'info');
+        return;
+      }
+
+      // Guard: if NOT logged in and trying to access internal steps, route goes to login (step1)
+      if (!isLoggedIn.value && step !== 'step1') {
+        activeWorkflowStep.value = 'step1';
+        syncRouteHash();
+        showToast('Please log in to access this section.', 'warning');
+        return;
+      }
+
+      activeWorkflowStep.value = step;
+      if (step === 'step4') {
+        bottomNav.value = segment === 'profile' ? 'profile' : 'home';
+        if (segment) dashboardSegment.value = segment;
+      }
+      syncRouteHash();
+    }
+
+    function syncRouteHash() {
+      let targetHash = '#/home';
+      if (activeWorkflowStep.value === 'step1') {
+        targetHash = authMode.value === 'signup' ? '#/signup' : (authMode.value === 'forgot' ? '#/forgot' : '#/login');
+      } else if (activeWorkflowStep.value === 'step2') {
+        targetHash = '#/salary';
+      } else if (activeWorkflowStep.value === 'step3') {
+        targetHash = '#/slots';
+      } else if (activeWorkflowStep.value === 'step4') {
+        targetHash = dashboardSegment.value === 'profile' ? '#/profile' : '#/home';
+      } else if (activeWorkflowStep.value === 'active_task') {
+        targetHash = '#/tasks';
+      }
+      if (window.location.hash !== targetHash) {
+        try {
+          window.history.replaceState(null, '', targetHash);
+        } catch (e) {}
+      }
+    }
+
+    function handleRouteAccess() {
+      const hash = (window.location.hash || '').toLowerCase();
+      if (isLoggedIn.value) {
+        // If logged in: any access to login/auth/step1 goes to Home
+        if (!hash || hash === '' || hash === '#/' || hash === '#/login' || hash === '#/signup' || hash === '#/forgot' || hash === '#/auth' || hash === '#/step1' || hash === '#/home') {
+          navigateToStep('step4');
+        } else if (hash === '#/step2' || hash === '#/salary' || hash === '#/approvals') {
+          navigateToStep('step2');
+        } else if (hash === '#/step3' || hash === '#/slots' || hash === '#/shifts') {
+          navigateToStep('step3');
+        } else if (hash === '#/profile') {
+          navigateToStep('step4', 'profile');
+        } else if (hash === '#/packs') {
+          navigateBottom('packs');
+        } else if (hash === '#/tasks') {
+          activeWorkflowStep.value = 'active_task';
+          bottomNav.value = 'tasks';
+        } else {
+          navigateToStep('step4');
+        }
+      } else {
+        // Not logged in: go to step1
+        activeWorkflowStep.value = 'step1';
+        if (hash === '#/signup') authMode.value = 'signup';
+        else if (hash === '#/forgot') authMode.value = 'forgot';
+        else authMode.value = 'login';
+        syncRouteHash();
+      }
+    }
+
+    function navigateBottom(tab) {
+      if (!isLoggedIn.value) {
+        navigateToStep('step1');
+        return;
+      }
+      bottomNav.value = tab;
+      if (tab === 'home') {
+        activeWorkflowStep.value = 'step4';
+        dashboardSegment.value = 'tasks';
+        syncRouteHash();
+      } else if (tab === 'packs') {
+        currentTab.value = 'packer';
+        activeWorkflowStep.value = 'active_task';
+        syncRouteHash();
+        fetchPackerOrders();
+      } else if (tab === 'tasks') {
+        activeWorkflowStep.value = 'step4';
+        dashboardSegment.value = 'tasks';
+        syncRouteHash();
+      } else if (tab === 'profile') {
+        activeWorkflowStep.value = 'step4';
+        dashboardSegment.value = 'profile';
+        syncRouteHash();
+      }
+    }
+
     onMounted(() => {
       initWebSocket();
       checkAuth();
+      window.addEventListener('hashchange', handleRouteAccess);
     });
 
     return {
+      activeWorkflowStep,
+      uiViewMode,
+      bottomNav,
+      dashboardSegment,
+      managerApprovalOtp,
+      pinDigits,
+      isRequestingPunchIn,
+      punchInStatusText,
+      selectedWeekIndex,
+      mockWeekDays,
+      selectedShiftSlotName,
+      mockCalendarDays,
+      onDigitInput,
+      onDigitKeydown,
+      selectHeroTask,
+      acceptManagerApproval,
+      submitPinUnlock,
+      navigateBottom,
+      navigateToStep,
       isLoggedIn,
       user,
       duty,

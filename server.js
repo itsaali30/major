@@ -240,9 +240,48 @@ app.get('/api/admin/duty-records', async (req, res) => {
       ? enriched.filter(r => r.employeeRole.toLowerCase() === role.toLowerCase())
       : enriched;
 
+    // Deduplicate / Group by Employee (userId) to avoid duplicate rows
+    const employeeMap = new Map();
+    const statusPriority = { 'ACTIVE': 4, 'PENDING_APPROVAL': 3, 'APPROVED': 2, 'COMPLETED': 1, 'REJECTED': 0 };
+
+    for (const rec of filtered) {
+      if (!employeeMap.has(rec.userId)) {
+        employeeMap.set(rec.userId, {
+          ...rec,
+          totalShifts: 1,
+          history: [{ ...rec }]
+        });
+      } else {
+        const emp = employeeMap.get(rec.userId);
+        emp.totalShifts += 1;
+        emp.history.push({ ...rec });
+
+        // If the newer/alternative record has a higher priority status, promote it as current duty summary
+        const currentPrio = statusPriority[emp.approvalStatus] ?? -1;
+        const newPrio = statusPriority[rec.approvalStatus] ?? -1;
+        if (newPrio > currentPrio) {
+          emp.dutyId = rec.dutyId;
+          emp.shiftSlot = rec.shiftSlot;
+          emp.punchInTime = rec.punchInTime;
+          emp.punchOutTime = rec.punchOutTime;
+          emp.approvalStatus = rec.approvalStatus;
+          emp.approvalCode = rec.approvalCode;
+          emp.approvedByName = rec.approvedByName;
+          emp.approvedAt = rec.approvedAt;
+          emp.totalHours = rec.totalHours;
+          emp.date = rec.date;
+          emp.notes = rec.notes;
+          if (rec.selfieUrl) emp.selfieUrl = rec.selfieUrl;
+        }
+      }
+    }
+
+    const uniqueEmployees = Array.from(employeeMap.values());
+
     res.json({
       success: true,
-      records: filtered,
+      records: uniqueEmployees,
+      rawRecords: filtered,
       counts: {
         pending: enriched.filter(r => r.approvalStatus === 'PENDING_APPROVAL').length,
         approved: enriched.filter(r => r.approvalStatus === 'APPROVED').length,
@@ -332,6 +371,151 @@ app.post('/api/admin/duty-reject', async (req, res) => {
 
     res.json({ success: true, message: 'Punch-in rejected', record: updated });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Force Checkout (Manager ends duty session immediately)
+app.post('/api/admin/duty-force-checkout', async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    const { dutyId, userId, reason } = req.body;
+
+    let targetDuty = null;
+    if (dutyId) {
+      targetDuty = await prisma.dutyRecords.findUnique({
+        where: { DutyID: Number(dutyId) }
+      });
+    } else if (userId) {
+      targetDuty = await prisma.dutyRecords.findFirst({
+        where: { UserID: Number(userId), ApprovalStatus: { in: ['ACTIVE', 'APPROVED', 'PENDING_APPROVAL'] } },
+        orderBy: { DutyID: 'desc' }
+      });
+    }
+
+    if (!targetDuty) {
+      return res.status(404).json({ success: false, error: 'No active duty record found for checkout' });
+    }
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString();
+    const punchInDate = targetDuty.CreatedAt ? new Date(targetDuty.CreatedAt) : now;
+    const hours = Math.max(0.2, parseFloat(((now.getTime() - punchInDate.getTime()) / (1000 * 60 * 60)).toFixed(1)));
+
+    const updated = await prisma.dutyRecords.update({
+      where: { DutyID: targetDuty.DutyID },
+      data: {
+        ApprovalStatus: 'COMPLETED',
+        PunchOutTime: timeStr,
+        TotalHours: hours,
+        Notes: `${targetDuty.Notes || ''} | Force Checked-Out by Manager at ${timeStr}. Reason: ${reason || 'Manager manual checkout'}`.trim()
+      }
+    });
+
+    // Update AttendanceLogs
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const attLog = await prisma.attendanceLogs.findFirst({
+      where: { StaffID: targetDuty.StaffID, Date: { gte: today } },
+      orderBy: { LogID: 'desc' }
+    });
+    if (attLog) {
+      await prisma.attendanceLogs.update({
+        where: { LogID: attLog.LogID },
+        data: { CheckOut: timeStr, Status: 'FORCE_CHECKOUT' }
+      });
+    }
+
+    // Set User offline
+    await prisma.users.update({
+      where: { UserID: targetDuty.UserID },
+      data: { IsOnline: false }
+    });
+
+    // Realtime Socket.io Sync to WMS
+    try {
+      await fetch('http://localhost:3001/api/auth/socket-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'wms:force_checkout',
+          userId: targetDuty.UserID,
+          message: `Floor Lead has performed Force Checkout (Punch Out). Duty is now OFF.`,
+          reason: reason || 'Manager manual checkout',
+          duty: updated
+        })
+      });
+    } catch (e) {
+      console.warn('WMS socket broadcast error:', e.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Employee force checked-out successfully! Logged duty: ${hours} hrs.`,
+      duty: updated
+    });
+  } catch (err) {
+    console.error('Force checkout error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Force Logout (Manager terminates employee mobile session)
+app.post('/api/admin/duty-force-logout', async (req, res) => {
+  try {
+    const authUser = getAuthUser(req);
+    const { userId, dutyId, reason } = req.body;
+    let targetUserId = userId;
+
+    if (!targetUserId && dutyId) {
+      const duty = await prisma.dutyRecords.findUnique({
+        where: { DutyID: Number(dutyId) }
+      });
+      if (duty) targetUserId = duty.UserID;
+    }
+
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: 'User ID or Duty ID is required' });
+    }
+
+    // Set user offline
+    await prisma.users.update({
+      where: { UserID: Number(targetUserId) },
+      data: { IsOnline: false }
+    });
+
+    // If dutyId provided, log note on dutyRecord
+    if (dutyId) {
+      await prisma.dutyRecords.update({
+        where: { DutyID: Number(dutyId) },
+        data: {
+          Notes: `Force Logged Out by Floor Lead. Reason: ${reason || 'Administrative termination'}`
+        }
+      });
+    }
+
+    // Realtime Socket.io Sync to WMS
+    try {
+      await fetch('http://localhost:3001/api/auth/socket-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'wms:force_logout',
+          userId: Number(targetUserId),
+          message: 'Your active session has been terminated by the Floor Lead / Admin.',
+          reason: reason || 'Manager force logout'
+        })
+      });
+    } catch (e) {
+      console.warn('WMS socket broadcast error:', e.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Employee session terminated. Force logout command issued successfully.'
+    });
+  } catch (err) {
+    console.error('Force logout error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

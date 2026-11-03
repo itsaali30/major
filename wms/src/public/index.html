@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WMS - Pick & Pack Handheld System</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Dark Store & WMS App Workflow</title>
+  <!-- Bootstrap 5 CSS CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <!-- Bootstrap Icons CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Vue 3 CDN -->
@@ -17,1546 +17,838 @@
   <link rel="stylesheet" href="/css/style.css">
   <link rel="manifest" href="/manifest.json">
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased select-none">
-  <div id="app" v-cloak class="max-w-md md:max-w-4xl mx-auto min-h-screen flex flex-col bg-slate-900 border-x border-slate-800 shadow-2xl relative pb-20">
+<body>
 
-    <!-- Top Status & Header -->
-    <header class="bg-slate-950 border-b border-slate-800 p-3 sticky top-0 z-50">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-lg border border-amber-500/30">
-            <i class="bi bi-boxes"></i>
-          </div>
-          <div>
-            <h1 class="text-sm font-black tracking-wider uppercase flex items-center gap-1.5 text-white">
-              WMS Core <span class="text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-bold">PDA</span>
-            </h1>
-            <p class="text-[11px] text-slate-400 flex items-center gap-1">
-              <span class="w-2 h-2 rounded-full" :class="isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'"></span>
-              {{ isSocketConnected ? 'Live Real-Time Sync' : 'Connecting...' }}
-            </p>
-          </div>
-        </div>
+  <div id="app" v-cloak class="min-h-screen d-flex flex-column">
 
-        <div v-if="isLoggedIn" class="flex items-center gap-2">
-          <!-- Live Wallet Pill (Step 8) -->
-          <button @click="currentTab = 'wallet'; fetchWalletSummary()" class="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-md text-[11px] font-mono font-bold hover:bg-emerald-500/20 transition">
-            <i class="bi bi-wallet2 text-xs"></i>
-            <span>₹{{ walletData.availableBalance ? walletData.availableBalance.toFixed(0) : '600' }}</span>
+    <!-- Top Workflow & Real-Time Sync Bar -->
+    <header class="bg-dark text-white border-bottom border-secondary border-opacity-25 py-2 sticky-top z-3 shadow-sm" style="background-color: #170d2c !important;">
+      <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <!-- 4 Steps Workflow Pills -->
+        <div class="d-flex align-items-center gap-1 overflow-x-auto py-1 text-nowrap scrollbar-none">
+          <button @click="navigateToStep('step1')"
+            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
+            :class="activeWorkflowStep === 'step1' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
+            1. Auth
           </button>
-
-          <!-- Salary Rate Notice Button (Step 2) -->
-          <button @click="showSalaryNoticeModal = true" class="hidden sm:flex text-[10px] text-amber-400/90 font-bold items-center gap-1 bg-slate-800/80 px-2 py-1 rounded border border-slate-700 hover:border-amber-500/40">
-            <i class="bi bi-cash-stack"></i> Rates & Salary
+          <button @click="navigateToStep('step2')"
+            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
+            :class="activeWorkflowStep === 'step2' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
+            2. Salary & Approvals
           </button>
-
-          <!-- Worker Profile Trigger (Step 4) -->
-          <button @click="showProfileModal = true" class="w-8 h-8 rounded-full bg-slate-800 border border-amber-500/40 text-amber-400 flex items-center justify-center text-xs font-black shadow-md hover:scale-105 transition" title="Worker Profile">
-            {{ user.name ? user.name.charAt(0).toUpperCase() : 'U' }}
+          <button @click="navigateToStep('step3')"
+            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
+            :class="activeWorkflowStep === 'step3' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
+            3. Slots & History
           </button>
-
-          <!-- Role Badge -->
-          <div class="text-right hidden sm:block">
-            <div class="text-xs font-bold text-slate-200 capitalize leading-tight">{{ user.name }}</div>
-            <span class="text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase"
-              :class="getRoleBadgeClass(user.role)">
-              {{ user.role }}
-            </span>
-          </div>
-
-          <button @click="logout" title="Logout" class="w-8 h-8 rounded bg-slate-800 text-slate-400 hover:text-rose-400 flex items-center justify-center text-sm border border-slate-700">
-            <i class="bi bi-box-arrow-right"></i>
-          </button>
-        </div>
-      </div>
-
-      <!-- Attendance & Duty Controls (When Logged In) -->
-      <div v-if="isLoggedIn" class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2 flex-wrap">
-        <!-- Punch In / Out Button & Code Pending Alert -->
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <button v-if="duty.duty === 'OFF'" @click="openPunchInModal" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition">
-            <i class="bi bi-fingerprint text-sm"></i> Punch In
-          </button>
-          
-          <!-- When Punch In is waiting for Manager 4-Digit Code -->
-          <button v-else-if="duty.duty === 'PENDING_APPROVAL' || duty.requiresCode" @click="openDutyCodeModal"
-            class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-lg shadow-amber-500/20 animate-pulse">
-            <i class="bi bi-key-fill text-sm"></i> Enter 4-Digit Manager Code
-          </button>
-
-          <button v-else @click="punchOut" class="bg-rose-600/80 hover:bg-rose-500 text-white font-bold px-2.5 py-1.5 rounded-md flex items-center gap-1 transition">
-            <i class="bi bi-box-arrow-left"></i> Punch Out
-          </button>
-
-          <!-- Break Toggle -->
-          <button v-if="duty.duty === 'ON'" @click="toggleBreak" class="px-2.5 py-1.5 rounded-md font-bold transition flex items-center gap-1 border"
-            :class="duty.onBreak ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-amber-400 border-slate-700'">
-            <i :class="duty.onBreak ? 'bi bi-play-circle-fill' : 'bi bi-cup-hot-fill'"></i>
-            {{ duty.onBreak ? 'Resume Duty' : 'Take Break' }}
+          <button @click="navigateToStep('step4')"
+            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
+            :class="activeWorkflowStep === 'step4' || activeWorkflowStep === 'active_task' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
+            4. Task Dashboard
           </button>
         </div>
 
-        <!-- Duty Toggle Switch -->
-        <div class="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1 rounded-md border border-slate-800">
-          <span class="text-[11px] font-bold uppercase tracking-wider"
-            :class="duty.duty === 'ON' ? 'text-emerald-400' : (duty.duty === 'PENDING_APPROVAL' ? 'text-amber-400' : 'text-slate-500')">
-            {{ duty.duty === 'ON' ? 'Duty ON' : (duty.duty === 'PENDING_APPROVAL' ? 'Awaiting Code' : 'Duty OFF') }}
+        <!-- Real-Time Socket Connection Badge -->
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge rounded-pill bg-dark border border-secondary border-opacity-50 font-monospace d-inline-flex align-items-center gap-1.5 py-1 px-2.5"
+                :class="isSocketConnected ? 'text-success' : 'text-danger'">
+            <span class="spinner-grow spinner-grow-sm" style="width: 8px; height: 8px;" v-if="isSocketConnected"></span>
+            <i class="bi bi-circle-fill text-danger" style="font-size: 8px;" v-else></i>
+            {{ isSocketConnected ? 'Socket Live Sync' : 'Offline' }}
           </span>
-          <button @click="toggleDuty" class="w-10 h-5 rounded-full transition relative border"
-            :class="duty.duty === 'ON' ? 'bg-emerald-500 border-emerald-400' : (duty.duty === 'PENDING_APPROVAL' ? 'bg-amber-500 border-amber-400' : 'bg-slate-700 border-slate-600')">
-            <span class="w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition"
-              :class="duty.duty === 'ON' ? 'right-0.5' : 'left-0.5'"></span>
-          </button>
         </div>
       </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 p-3">
+    <!-- Main Content Area (Bootstrap Container: Fits perfectly on Mobile & PC) -->
+    <main class="flex-grow-1 py-3">
+      <div class="container" style="max-width: 1080px;">
 
-      <!-- ==================== AUTH VIEW (LOGIN / SIGNUP / FORGOT PASSWORD) ==================== -->
-      <section v-if="!isLoggedIn" class="pt-4 pb-12 flex flex-col items-center">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center text-3xl font-black mb-3 shadow-xl shadow-amber-500/20">
-          <i class="bi bi-upc-scan"></i>
-        </div>
-        <h2 class="text-xl font-black text-white tracking-wide">Warehouse Terminal (WMS)</h2>
-        <p class="text-xs text-slate-400 mb-4 text-center">Handheld PDA system for Picker, Put-away, Inward & Packer staff</p>
-
-        <!-- Auth Switch Tabs (Login / Sign Up / Forgot Password) -->
-        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 mb-4 w-full max-w-sm text-xs font-bold">
-          <button @click="authMode = 'login'" class="flex-1 py-1.5 rounded-lg text-center transition"
-            :class="authMode === 'login' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-box-arrow-in-right"></i> Login
-          </button>
-          <button @click="authMode = 'signup'" class="flex-1 py-1.5 rounded-lg text-center transition"
-            :class="authMode === 'signup' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-person-plus-fill"></i> Sign Up
-          </button>
-          <button @click="authMode = 'forgot'" class="flex-1 py-1.5 rounded-lg text-center transition"
-            :class="authMode === 'forgot' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-question-circle-fill"></i> Forgot?
-          </button>
-        </div>
-
-        <!-- 1. LOGIN FORM -->
-        <form v-if="authMode === 'login'" @submit.prevent="login" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
-          <div>
-            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Mobile or Email</label>
-            <div class="relative">
-              <i class="bi bi-person absolute left-3 top-2.5 text-slate-500"></i>
-              <input v-model="loginForm.login" type="text" required placeholder="e.g. 9985699757 or picker@store.com"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 font-mono">
+        <!-- ========================================================================= -->
+        <!-- STEP 1. ONBOARDING & AUTHENTICATION SCREEN                                 -->
+        <!-- ========================================================================= -->
+        <section v-if="activeWorkflowStep === 'step1'" class="animate-fadeInScale py-3">
+          <!-- Logged-in Banner Guard -->
+          <div v-if="isLoggedIn" class="row justify-content-center mb-3">
+            <div class="col-12 col-md-8 col-lg-5">
+              <div class="card wms-card border-0 shadow-sm p-4 text-center">
+                <i class="bi bi-person-check-fill text-success fs-1 mb-2"></i>
+                <h4 class="fw-bold text-white mb-1">Already Logged In</h4>
+                <p class="text-white-50 small mb-3">You are currently logged in as <span class="text-success fw-bold">{{ user.name || user.email }}</span> ({{ user.role }}).</p>
+                <div class="d-flex flex-column gap-2">
+                  <button @click="navigateToStep('step4')" class="btn btn-emerald w-100 py-2 fw-bold text-uppercase">
+                    <i class="bi bi-house-door me-1"></i> Go to Home Dashboard
+                  </button>
+                  <button @click="logout" class="btn btn-outline-danger btn-sm w-100 py-2 fw-bold">
+                    <i class="bi bi-box-arrow-right me-1"></i> Log Out
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs font-bold text-slate-300 uppercase">Password</label>
-              <button type="button" @click="authMode = 'forgot'" class="text-[11px] text-amber-400 hover:underline">Forgot Password?</button>
+          <div v-else class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-5">
+              <!-- Deep Purple Hero Header Card -->
+              <div class="wms-purple-header text-center p-4 rounded-4 shadow-sm mb-3">
+                <div class="rounded-3 bg-success text-dark d-inline-flex align-items-center justify-content-center fw-bold fs-3 mb-2 shadow" style="width: 54px; height: 54px;">
+                  <i class="bi bi-upc-scan"></i>
+                </div>
+                <h3 class="fw-bolder mb-1 text-white">Welcome Back!</h3>
+                <p class="text-white-50 small mb-0">ID/Email/Phone & Password</p>
+              </div>
+
+              <!-- Auth Card -->
+              <div class="card wms-card border-0 shadow-sm p-4">
+                <!-- Mode Switch Tabs -->
+                <div class="btn-group w-100 mb-3 bg-light p-1 rounded-3">
+                  <button @click="authMode = 'login'" class="btn btn-sm rounded-2 fw-bold"
+                    :class="authMode === 'login' ? 'btn-white bg-white text-dark shadow-sm' : 'text-muted'">
+                    Login
+                  </button>
+                  <button @click="authMode = 'signup'" class="btn btn-sm rounded-2 fw-bold"
+                    :class="authMode === 'signup' ? 'btn-white bg-white text-dark shadow-sm' : 'text-muted'">
+                    Sign Up
+                  </button>
+                  <button @click="authMode = 'forgot'" class="btn btn-sm rounded-2 fw-bold"
+                    :class="authMode === 'forgot' ? 'btn-white bg-white text-dark shadow-sm' : 'text-muted'">
+                    Forgot?
+                  </button>
+                </div>
+
+                <!-- 1. LOGIN FORM -->
+                <form v-if="authMode === 'login'" @submit.prevent="login" class="d-flex flex-column gap-3">
+                  <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-person fs-5"></i></span>
+                    <input v-model="loginForm.login" type="text" required placeholder="ID/Email/Phone" class="form-control border-start-0 py-2">
+                  </div>
+
+                  <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-lock fs-5"></i></span>
+                    <input v-model="loginForm.password" type="password" required placeholder="Password" class="form-control border-start-0 py-2">
+                  </div>
+
+                  <div v-if="loginError" class="alert alert-danger py-2 px-3 small d-flex align-items-center gap-2 mb-0 rounded-3">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <span>{{ loginError }}</span>
+                  </div>
+
+                  <button type="submit" :disabled="isLoggingIn" class="btn btn-emerald w-100 py-2.5 text-uppercase">
+                    <span v-if="isLoggingIn" class="spinner-border spinner-border-sm me-1"></span>
+                    <span>Sign Up / Login</span>
+                  </button>
+
+                  <div class="text-center">
+                    <button type="button" @click="authMode = 'forgot'" class="btn btn-link text-decoration-none small text-muted p-0">
+                      Forgot Password?
+                    </button>
+                  </div>
+                </form>
+
+                <!-- 2. SIGN UP FORM -->
+                <form v-else-if="authMode === 'signup'" @submit.prevent="submitSignUp" class="d-flex flex-column gap-2.5">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <input v-model="signUpForm.firstName" type="text" required placeholder="First Name" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-6">
+                      <input v-model="signUpForm.lastName" type="text" placeholder="Last Name" class="form-control form-control-sm">
+                    </div>
+                  </div>
+                  <input v-model="signUpForm.mobile" type="tel" required placeholder="10-digit mobile" class="form-control form-control-sm font-monospace">
+                  <input v-model="signUpForm.email" type="email" required placeholder="staff@store.com" class="form-control form-control-sm font-monospace">
+                  <select v-model="signUpForm.role" class="form-select form-select-sm">
+                    <option value="picker">🎯 Picker (Item Uthane Wala)</option>
+                    <option value="putter">📦 Put-away Associate (Maal Rakhne Wala)</option>
+                    <option value="inward">🚚 Inward / Receiving Associate</option>
+                    <option value="packer">🛍️ Packer & Sorter</option>
+                    <option value="manager">🧑‍💼 Warehouse Floor Lead / Manager</option>
+                  </select>
+                  <input v-model="signUpForm.password" type="password" required placeholder="Password" class="form-control form-control-sm">
+                  <button type="submit" :disabled="isSubmittingAuth" class="btn btn-emerald w-100 py-2 text-uppercase mt-2">
+                    Register Staff Account
+                  </button>
+                </form>
+
+                <!-- 3. FORGOT PASSWORD FORM -->
+                <form v-else-if="authMode === 'forgot'" @submit.prevent="submitForgotPassword" class="d-flex flex-column gap-2.5">
+                  <h6 class="fw-bold mb-1">Reset Terminal Password</h6>
+                  <input v-model="forgotForm.login" type="text" required placeholder="Registered Mobile or Email" class="form-control form-control-sm">
+                  <input v-model="forgotForm.newPassword" type="password" required placeholder="New Password" class="form-control form-control-sm">
+                  <button type="submit" :disabled="isSubmittingAuth" class="btn btn-emerald w-100 py-2 text-uppercase mt-2">
+                    Reset & Login
+                  </button>
+                </form>
+              </div>
+
+              <!-- Quick Role Demo Switcher -->
+              <div class="mt-4 pt-3 border-top border-secondary border-opacity-25 text-center">
+                <small class="text-white-50 text-uppercase fw-bold d-block mb-2">Quick Switch Staff Role (Demo / Testing)</small>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <button type="button" @click="quickLogin('picker')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
+                      <span class="badge bg-warning text-dark me-1">1</span> Picker
+                    </button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" @click="quickLogin('putter')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
+                      <span class="badge bg-info text-dark me-1">2</span> Put-away
+                    </button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" @click="quickLogin('inward')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
+                      <span class="badge bg-success text-white me-1">3</span> Inward
+                    </button>
+                  </div>
+                  <div class="col-6">
+                    <button type="button" @click="quickLogin('packer')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
+                      <span class="badge bg-primary text-white me-1">4</span> Packer
+                    </button>
+                  </div>
+                  <div class="col-12">
+                    <button type="button" @click="quickLogin('manager')" class="btn btn-dark w-100 btn-sm text-center fw-bold shadow-sm border text-danger">
+                      <i class="bi bi-shield-lock-fill me-1"></i> 5. Warehouse Floor Lead / Manager
+                    </button>
+                  </div>
+                </div>
+              </div>
+
             </div>
-            <div class="relative">
-              <i class="bi bi-key absolute left-3 top-2.5 text-slate-500"></i>
-              <input v-model="loginForm.password" type="password" required placeholder="••••••••"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 font-mono">
+          </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- STEP 2. PRE-DUTY, SALARY NOTIFICATION & APPROVALS                          -->
+        <!-- ========================================================================= -->
+        <section v-else-if="activeWorkflowStep === 'step2'" class="animate-fadeInScale py-2">
+          <!-- Header Bar -->
+          <div class="wms-purple-header rounded-4 p-3 d-flex justify-content-between align-items-center mb-3 shadow-sm">
+            <div class="d-flex align-items-center gap-2">
+              <button @click="navigateToStep('step4')" class="btn btn-link text-white p-0 me-1" title="Back to Home">
+                <i class="bi bi-arrow-left fs-5"></i>
+              </button>
+              <h5 class="mb-0 fw-bold text-white text-uppercase">Shift Salary Notice & Approvals</h5>
             </div>
+            <span class="badge bg-success text-dark fw-bold rounded-pill px-3 py-1.5">Step 2 Dual Sync</span>
           </div>
 
-          <div v-if="loginError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <span>{{ loginError }}</span>
-          </div>
-
-          <button type="submit" :disabled="isLoggingIn"
-            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-sm uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20">
-            <span v-if="isLoggingIn" class="animate-spin text-lg"><i class="bi bi-arrow-repeat"></i></span>
-            <span v-else><i class="bi bi-box-arrow-in-right"></i> Login & Access PDA</span>
-          </button>
-
-          <!-- Quick Role Demo Switcher -->
-          <div class="pt-3 border-t border-slate-800/80">
-            <p class="text-[11px] text-slate-500 font-bold uppercase mb-2 text-center">Quick Switch Role (Testing)</p>
-            <div class="grid grid-cols-2 gap-1.5 text-xs">
-              <button type="button" @click="quickLogin('picker')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-amber-400 font-semibold flex items-center justify-center gap-1">
-                <i class="bi bi-hand-index-thumb"></i> 1. Picker
-              </button>
-              <button type="button" @click="quickLogin('putter')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-cyan-400 font-semibold flex items-center justify-center gap-1">
-                <i class="bi bi-box-seam"></i> 2. Put-away
-              </button>
-              <button type="button" @click="quickLogin('inward')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-emerald-400 font-semibold flex items-center justify-center gap-1">
-                <i class="bi bi-truck"></i> 3. Inward
-              </button>
-              <button type="button" @click="quickLogin('packer')" class="p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-purple-400 font-semibold flex items-center justify-center gap-1">
-                <i class="bi bi-bag-check"></i> 4. Packer
-              </button>
-              <button type="button" @click="quickLogin('manager')" class="col-span-2 p-1.5 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 text-rose-400 font-bold flex items-center justify-center gap-1">
-                <i class="bi bi-shield-lock"></i> 5. Warehouse Manager / Supervisor
-              </button>
-            </div>
-          </div>
-        </form>
-
-        <!-- 2. SIGN UP FORM (NEW STAFF REGISTRATION) -->
-        <form v-else-if="authMode === 'signup'" @submit.prevent="submitSignUp" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">First Name</label>
-              <input v-model="signUpForm.firstName" type="text" required placeholder="e.g. Ramesh"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Last Name</label>
-              <input v-model="signUpForm.lastName" type="text" placeholder="e.g. Yadav"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500">
-            </div>
-          </div>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Mobile Number</label>
-            <input v-model="signUpForm.mobile" type="tel" required placeholder="10-digit mobile e.g. 9876543210"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-          </div>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Email ID</label>
-            <input v-model="signUpForm.email" type="email" required placeholder="ramesh@warehouse.com"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-          </div>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Warehouse Staff Role</label>
-            <select v-model="signUpForm.role" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
-              <option value="picker">🎯 Picker (Item Uthane Wala)</option>
-              <option value="putter">📦 Put-away Associate (Maal Rakhne Wala)</option>
-              <option value="inward">🚚 Inward / Receiving Associate</option>
-              <option value="packer">🛍️ Packer & Sorter</option>
-              <option value="manager">🧑‍💼 Warehouse Floor Lead / Manager</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Set Password</label>
-            <input v-model="signUpForm.password" type="password" required placeholder="Create password"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-          </div>
-
-          <div v-if="authError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <span>{{ authError }}</span>
-          </div>
-
-          <button type="submit" :disabled="isSubmittingAuth"
-            class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg">
-            <span v-if="isSubmittingAuth" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-            <span v-else><i class="bi bi-check-circle-fill"></i> Register Staff Account</span>
-          </button>
-        </form>
-
-        <!-- 3. FORGOT PASSWORD FORM -->
-        <form v-else-if="authMode === 'forgot'" @submit.prevent="submitForgotPassword" class="w-full max-w-sm space-y-3 bg-slate-950 p-5 rounded-xl border border-slate-800 shadow-xl">
-          <h4 class="text-xs font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-            <i class="bi bi-shield-lock-fill"></i> Reset Terminal Password
-          </h4>
-          <p class="text-[11px] text-slate-400">Enter your registered mobile or email to reset your terminal password.</p>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">Registered Mobile or Email</label>
-            <input v-model="forgotForm.login" type="text" required placeholder="e.g. 9876543210"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-          </div>
-
-          <div>
-            <label class="block text-[11px] font-bold text-slate-300 uppercase mb-1">New Password</label>
-            <input v-model="forgotForm.newPassword" type="password" required placeholder="Enter new password"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-          </div>
-
-          <div v-if="authError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs flex items-center gap-2">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <span>{{ authError }}</span>
-          </div>
-
-          <button type="submit" :disabled="isSubmittingAuth"
-            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg">
-            <span v-if="isSubmittingAuth" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-            <span v-else><i class="bi bi-arrow-counterclockwise"></i> Reset Password & Login</span>
-          </button>
-        </form>
-
-      </section>
-
-      <!-- ==================== DASHBOARD WHEN LOGGED IN ==================== -->
-      <section v-else class="space-y-3">
-
-        <!-- Role Nav Tabs -->
-        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto text-xs font-bold scrollbar-none">
-          <button v-if="canAccess('picker')" @click="currentTab = 'picker'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'picker' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-hand-index-thumb"></i> Picker
-          </button>
-          <button v-if="canAccess('putter')" @click="currentTab = 'putter'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'putter' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-box-seam"></i> Put-away
-          </button>
-          <button v-if="canAccess('inward')" @click="currentTab = 'inward'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'inward' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-truck"></i> Inward
-          </button>
-          <button v-if="canAccess('packer')" @click="currentTab = 'packer'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'packer' ? 'bg-purple-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-bag-check"></i> Packer
-          </button>
-          <button @click="currentTab = 'transfer'; fetchTransferData()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'transfer' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-arrow-left-right"></i> Transfer / Move
-          </button>
-          <button @click="currentTab = 'shifts'; fetchShiftSlots(); fetchAttendanceHistory()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'shifts' ? 'bg-teal-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-calendar-check"></i> Shifts & Attendance
-          </button>
-          <button @click="currentTab = 'wallet'; fetchWalletSummary(); fetchPayoutHistory()" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'wallet' ? 'bg-emerald-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-wallet2"></i> Wallet & Payout
-          </button>
-          <button v-if="canAccess('manager')" @click="currentTab = 'manager'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'manager' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-speedometer2"></i> Floor Lead
-          </button>
-          <button @click="currentTab = 'audit'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition flex items-center gap-1.5"
-            :class="currentTab === 'audit' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-            <i class="bi bi-journal-text"></i> Audit Logs
-          </button>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 1. PICKER VIEW (OUTBOUND & RETURN PICKING)              -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'picker'" class="space-y-3">
-          <!-- Picker subtabs -->
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <button @click="pickerMode = 'outbound'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
-                :class="pickerMode === 'outbound' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
-                Outbound Order Pick
-              </button>
-              <button @click="pickerMode = 'returns'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
-                :class="pickerMode === 'returns' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
-                Customer Return Pick
-              </button>
-            </div>
-
-            <button @click="fetchPickerTask" class="text-xs text-amber-400 hover:underline flex items-center gap-1">
-              <i class="bi bi-arrow-clockwise"></i> Refresh
-            </button>
-          </div>
-
-          <!-- Outbound Picking Section -->
-          <div v-if="pickerMode === 'outbound'">
-            <!-- Active Task Assigned Card -->
-            <div v-if="pickerTask" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3 shadow-lg">
-              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <!-- Responsive 2-Column Grid on PC, Stacked on Mobile -->
+          <div class="row g-3">
+            <!-- Left Column: Shift Salary Notice -->
+            <div class="col-12 col-md-6">
+              <div class="card wms-card border-0 shadow-sm p-4 h-100 d-flex flex-column justify-content-between">
                 <div>
-                  <span class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-black uppercase">
-                    PickList #{{ pickerTask.pickListId }}
-                  </span>
-                  <h3 class="text-base font-black text-white mt-1">Order #{{ pickerTask.orderId }}</h3>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs font-mono font-bold text-amber-400 flex items-center gap-1">
-                    <i class="bi bi-stopwatch-fill animate-pulse text-rose-400"></i>
-                    Target: 60-90s/item
-                  </div>
-                  <div class="text-[11px] text-slate-400">
-                    {{ pickerTask.totalPicked }} / {{ pickerTask.totalItems }} Items Picked
-                  </div>
-                </div>
-              </div>
-
-              <!-- Progress bar -->
-              <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div class="bg-amber-500 h-2 rounded-full transition-all duration-300"
-                  :style="{ width: (pickerTask.totalPicked / (pickerTask.totalItems || 1) * 100) + '%' }"></div>
-              </div>
-
-              <!-- Item List with Shelf Bin Location -->
-              <div class="space-y-2">
-                <div v-for="item in pickerTask.items" :key="item.itemId"
-                  class="p-3 rounded-lg border transition-all"
-                  :class="item.status === 'PICKED' ? 'bg-emerald-950/20 border-emerald-800/40 opacity-70' : 'bg-slate-900 border-slate-800'">
-                  <div class="flex items-start gap-2.5">
-                    <img :src="item.imageUrl" class="w-14 h-14 rounded-lg object-cover bg-slate-800 border border-slate-700 flex-shrink-0">
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between gap-1">
-                        <span class="text-xs font-black text-amber-400 font-mono tracking-tight bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
-                          <i class="bi bi-geo-alt-fill text-rose-400"></i> {{ item.shelfCode }}
-                        </span>
-                        <span v-if="item.status === 'PICKED'" class="text-[10px] bg-emerald-500 text-slate-950 font-bold px-1.5 py-0.2 rounded">
-                          PICKED
-                        </span>
+                  <h6 class="fw-bolder text-uppercase text-dark mb-3">Active Shift Pay</h6>
+                  
+                  <div class="bg-light p-3 rounded-4 border mb-3">
+                    <div class="row align-items-center">
+                      <div class="col-6">
+                        <small class="text-muted d-block font-weight-bold">Base Pay</small>
+                        <span class="fs-2 fw-bolder font-monospace text-dark">₹450</span>
                       </div>
-                      <h4 class="text-xs font-bold text-white truncate mt-1">{{ item.productName }}</h4>
-                      <p class="text-[11px] text-slate-400 font-mono">SKU: {{ item.sku }} | Qty: <strong class="text-white">{{ item.qtyToPick }}</strong></p>
+                      <div class="col-6 text-end">
+                        <small class="text-muted d-block font-weight-bold">Est. Task Earnings</small>
+                        <span class="fs-5 fw-bolder font-monospace text-success">₹250-₹500</span>
+                      </div>
                     </div>
                   </div>
 
-                  <!-- Barcode Scan trigger for this item -->
-                  <div v-if="item.status !== 'PICKED'" class="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2">
-                    <input v-model="scanInputs[item.itemId]" @keyup.enter="scanPickItem(item)"
-                      placeholder="Scan/Type Barcode to confirm..."
-                      class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
-                    <button @click="scanPickItem(item)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
-                      <i class="bi bi-upc-scan"></i> Scan
-                    </button>
-                    <button @click="openCameraScanner(item)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-1.5 rounded text-xs border border-slate-700">
-                      <i class="bi bi-camera-fill"></i>
-                    </button>
-                  </div>
+                  <h6 class="fw-bold text-muted small text-uppercase mb-2">Incentive slabs</h6>
+                  <ul class="list-group list-group-flush mb-3">
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                      <span class="small font-weight-bold">Incentive slabs (15-30 picks)</span>
+                      <strong class="font-monospace">₹250 - ₹500</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                      <span class="small font-weight-bold">Incentive slabs (Fast Put-away)</span>
+                      <strong class="font-monospace">₹250 - ₹500</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                      <span class="small font-weight-bold">Incentive slabs (Zero Error Bonus)</span>
+                      <strong class="font-monospace">₹350 - ₹500</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                      <span class="small font-weight-bold">Incentive slabs (Peak Shift Allowance)</span>
+                      <strong class="font-monospace">₹350 - ₹500</strong>
+                    </li>
+                  </ul>
                 </div>
-              </div>
 
-              <!-- Complete Order Button -->
-              <button @click="completePickOrder"
-                :disabled="pickerTask.totalPicked < pickerTask.totalItems"
-                class="w-full py-3 rounded-lg font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition"
-                :class="pickerTask.totalPicked >= pickerTask.totalItems
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20'
-                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'">
-                <i class="bi bi-check-circle-fill"></i> Complete Order & Pick Next (Auto-Assign)
-              </button>
-            </div>
-
-            <!-- Empty / Waiting State -->
-            <div v-else class="bg-slate-950 border border-slate-800 rounded-xl p-8 text-center space-y-3">
-              <div class="w-14 h-14 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-2xl text-amber-400">
-                <i class="bi bi-hourglass-split animate-spin"></i>
-              </div>
-              <h3 class="text-sm font-black text-white">No Picking Order Assigned</h3>
-              <p class="text-xs text-slate-400 max-w-xs mx-auto">
-                {{ duty.duty === 'ON' ? 'Aapki Duty ON hai! Agla order aate hi ya free hote hi system auto-assign karega.' : 'Duty ON karein taaki orders automatically assign ho sakein.' }}
-              </p>
-              <button v-if="duty.duty === 'OFF'" @click="toggleDuty" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs">
-                Switch Duty ON
-              </button>
-            </div>
-          </div>
-
-          <!-- Customer Return Picking Section -->
-          <div v-if="pickerMode === 'returns'" class="space-y-2.5">
-            <div v-for="ret in returnPickList" :key="ret.returnId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-black text-rose-400 font-mono">{{ ret.returnId }}</span>
-                <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-bold">Rider Handover Return</span>
-              </div>
-              <div class="text-xs">
-                <h4 class="font-bold text-white">{{ ret.productName }} (Qty: {{ ret.qty }})</h4>
-                <p class="text-slate-400 mt-0.5">Bin: <strong class="text-amber-400 font-mono">{{ ret.shelfCode }}</strong></p>
-                <p class="text-slate-400">Customer: <strong class="text-slate-200">{{ ret.customerName }}</strong> | Rider: <strong class="text-slate-200">{{ ret.riderName }}</strong></p>
-                <p class="text-slate-400 text-[11px] italic mt-1 text-amber-400/80">Reason: {{ ret.reason }}</p>
-              </div>
-              <div class="pt-2 border-t border-slate-800 flex items-center gap-2">
-                <input v-model="ret.scannedBin" placeholder="Scan Bin Barcode to pick..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
-                <button @click="confirmReturnPick(ret)" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
-                  <i class="bi bi-box-arrow-in-down-left"></i> Pick to Dock
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 2. PUT-AWAY ASSOCIATE / STAGING LOADER VIEW              -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'putter'" class="space-y-3">
-          <div class="flex items-center gap-2">
-            <button @click="putterTab = 'dock'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
-              :class="putterTab === 'dock' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
-              Dock Clearance (PO Inward)
-            </button>
-            <button @click="putterTab = 'reverse'" class="px-3 py-1 rounded-md text-xs font-bold uppercase transition"
-              :class="putterTab === 'reverse' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-400'">
-              Reverse Put-away (Restock)
-            </button>
-          </div>
-
-          <!-- Dock Clearance Tasks -->
-          <div v-if="putterTab === 'dock'" class="space-y-2.5">
-            <div v-for="task in putawayTasks" :key="task.taskId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div>
-                  <span class="text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-bold font-mono">
-                    {{ task.palletId }}
-                  </span>
-                  <h4 class="text-xs font-black text-white mt-1">{{ task.productName }}</h4>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs font-bold text-slate-200">Qty: {{ task.quantity }}</div>
-                  <div class="text-[11px] text-cyan-400 font-mono">{{ task.weightKg }} kg</div>
-                </div>
-              </div>
-
-              <!-- Stock Hygiene Alert Banner -->
-              <div class="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-medium flex items-center gap-2">
-                <i class="bi bi-shield-check text-sm text-amber-400 flex-shrink-0"></i>
-                <span>{{ task.hygieneRule }}</span>
-              </div>
-
-              <!-- Suggested Bin -->
-              <div class="flex items-center justify-between bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                <div>
-                  <div class="text-[10px] uppercase font-bold text-slate-400">Suggested Target Bin</div>
-                  <div class="text-sm font-black font-mono text-cyan-400 flex items-center gap-1">
-                    <i class="bi bi-geo-alt-fill text-rose-400"></i> {{ task.suggestedBin }}
-                  </div>
-                </div>
-                <div class="text-[11px] text-slate-400 font-mono">From: {{ task.stagingDock }}</div>
-              </div>
-
-              <!-- Scan Step 1 & 2 -->
-              <div class="space-y-2 pt-1">
-                <!-- Step 1: Scan Bin -->
-                <div class="flex items-center gap-2">
-                  <input v-model="task.scannedBinInput" placeholder="Step 1: Scan Bin Barcode..."
-                    class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500">
-                  <button @click="verifyPutawayBin(task)" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
-                    <i class="bi bi-upc-scan"></i> Bin Scan
-                  </button>
-                </div>
-
-                <!-- Step 2: Confirm Item Placement -->
-                <div v-if="task.binVerified" class="flex items-center gap-2 animate-fadeIn">
-                  <input v-model="task.scannedItemInput" placeholder="Step 2: Scan Item Barcode to place..."
-                    class="flex-1 bg-slate-900 border border-emerald-600 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
-                  <button @click="confirmPutawayPlacement(task)" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded text-xs flex items-center gap-1">
-                    <i class="bi bi-check-lg"></i> Put in Shelf
+                  <p class="text-muted small text-center italic mb-2">The accept & request punch-in... punch this</p>
+                  <button @click="acceptManagerApproval" class="btn btn-emerald w-100 py-2.5 text-uppercase">
+                    Accept & Request Punch-In
                   </button>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Reverse Putaway -->
-          <div v-if="putterTab === 'reverse'" class="space-y-2.5">
-            <div v-for="rev in reversePutawayList" :key="rev.taskId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-purple-400">{{ rev.taskId }} - {{ rev.returnId }}</span>
-                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">Restock to Shelf</span>
-              </div>
-              <h4 class="text-xs font-bold text-white">{{ rev.productName }} (Qty: {{ rev.quantity }})</h4>
-              <p class="text-xs text-slate-400">Target Shelf: <strong class="text-cyan-400 font-mono">{{ rev.targetShelf }}</strong></p>
-              <p class="text-[11px] text-slate-500 italic">{{ rev.reason }}</p>
-              <div class="pt-2 border-t border-slate-800 flex items-center gap-2">
-                <input v-model="rev.scannedBin" placeholder="Scan Target Bin to restock..." class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono">
-                <button @click="confirmReverseRestock(rev)" class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3 py-1.5 rounded text-xs">
-                  Restock
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 3. INWARD / RECEIVING ASSOCIATE VIEW                     -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'inward'" class="space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider">Purchase Orders Unloading (PO)</h3>
-            <button @click="openDamageModal(null)" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-2.5 py-1 rounded flex items-center gap-1 shadow-md">
-              <i class="bi bi-exclamation-octagon-fill"></i> Flag Damage/Leakage
-            </button>
-          </div>
-
-          <div class="space-y-2.5">
-            <div v-for="po in purchaseOrders" :key="po.poNumber" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                <div>
-                  <span class="text-xs font-black text-emerald-400 font-mono">{{ po.poNumber }}</span>
-                  <h4 class="text-xs font-bold text-white mt-0.5">{{ po.supplierName }}</h4>
+            <!-- Right Column: Manager Approval OTP & Worker Punch-In -->
+            <div class="col-12 col-md-6 d-flex flex-column gap-3">
+              <!-- Sub-Card 1: MANAGER APPROVAL (Supervisor Preview) -->
+              <div class="card border-0 text-white p-3 rounded-4 shadow-sm" style="background: linear-gradient(135deg, #241445 0%, #2f1a58 100%);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="fw-bold text-uppercase small text-white-50">Manager Approval</span>
+                  <span class="badge bg-success text-dark fw-bold rounded-pill">Floor Lead Deck</span>
                 </div>
-                <div class="text-right">
-                  <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono font-bold">{{ po.truckNumber }}</span>
-                  <div class="text-[11px] text-slate-400 mt-0.5">Exp: {{ po.expectedCartons }} Cartons</div>
+                <div class="bg-white text-dark rounded-4 p-3 text-center my-1 border shadow-sm">
+                  <small class="text-muted d-block text-uppercase fw-bold">Approval OTP:</small>
+                  <h1 class="display-5 fw-bolder font-monospace tracking-widest mb-0">{{ managerApprovalOtp }}</h1>
                 </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Received Cartons</label>
-                  <input v-model="po.receivedInput" type="number" :placeholder="'Expected ' + po.expectedCartons"
-                    class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Contact</label>
-                  <div class="text-slate-300 font-mono py-1.5">{{ po.driverContact }}</div>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-2 pt-1 border-t border-slate-800">
-                <button @click="receivePO(po)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded text-xs flex items-center justify-center gap-1">
-                  <i class="bi bi-clipboard-check"></i> Verify Count & Unload
-                </button>
-                <button @click="generatePalletTag(po)" class="bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold px-3 py-1.5 rounded text-xs border border-slate-700 flex items-center gap-1">
-                  <i class="bi bi-tag-fill"></i> Tag Staging Pallet
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 4. PACKER & SORTER VIEW                                  -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'packer'" class="space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs font-black uppercase text-purple-400 tracking-wider">Packing Table & Bagging</h3>
-            <span class="text-xs text-slate-400">{{ ordersToPack.length }} Picked Orders Waiting</span>
-          </div>
-
-          <div v-if="ordersToPack.length === 0" class="bg-slate-950 border border-slate-800 rounded-xl p-8 text-center text-slate-400 text-xs">
-            <i class="bi bi-box2 text-3xl text-slate-600 block mb-2"></i>
-            No orders currently waiting at packing table.
-          </div>
-
-          <div v-for="order in ordersToPack" :key="order.orderId" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div>
-                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-black">
-                  READY FOR PACKING
-                </span>
-                <h4 class="text-sm font-black text-white mt-1">Order #{{ order.orderId }}</h4>
-              </div>
-              <div class="text-right">
-                <div class="text-xs font-bold text-slate-200">Exp Weight: {{ order.expectedWeightKg }} kg</div>
-                <div class="text-[10px] text-purple-400 font-mono">{{ order.suggestedBag }}</div>
-              </div>
-            </div>
-
-            <!-- Items Table to Tally -->
-            <div class="space-y-1.5">
-              <div class="text-[10px] font-bold text-slate-400 uppercase">Items to verify on table:</div>
-              <div v-for="item in order.items" :key="item.orderItemId"
-                class="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800 text-xs">
-                <div>
-                  <div class="font-bold text-white">{{ item.productName }}</div>
-                  <div class="text-[10px] text-slate-400 font-mono">SKU: {{ item.sku }} (x{{ item.qty }})</div>
-                </div>
-                <span v-if="verifiedPackItems[order.orderId + '_' + item.sku]" class="text-emerald-400 text-xs font-bold flex items-center gap-1">
-                  <i class="bi bi-check2-circle"></i> Tally OK
-                </span>
-                <button v-else @click="verifyPackItem(order.orderId, item.sku)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded text-[11px] border border-slate-700 font-mono">
-                  Scan Tally
-                </button>
-              </div>
-            </div>
-
-            <!-- Seal & Dispatch Handover Form -->
-            <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Bag Seal Barcode</label>
-                  <input v-model="packForms[order.orderId].sealBarcode" placeholder="Scan Seal # e.g. SEAL-8812"
-                    class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500">
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase">Scale Weight (Kg)</label>
-                  <input v-model="packForms[order.orderId].actualWeight" type="number" step="0.1" :placeholder="order.expectedWeightKg + ' kg'"
-                    class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none">
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase">Handover Bay / Rider Bay</label>
-                <select v-model="packForms[order.orderId].handoverBay" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
-                  <option value="BAY-DISPATCH-01">Bay 01 (Zepto Express Zone)</option>
-                  <option value="BAY-DISPATCH-02">Bay 02 (Standard Dispatch)</option>
-                  <option value="BAY-DISPATCH-03">Bay 03 (Cold Chain Cargo)</option>
-                </select>
-              </div>
-
-              <button @click="sealAndHandover(order.orderId)" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-md shadow-purple-900/30">
-                <i class="bi bi-shield-lock-fill"></i> Seal Bag & Handover to Bay
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 5. WAREHOUSE MANAGER / FLOOR LEAD VIEW                   -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'manager'" class="space-y-3">
-          <!-- Live Floor Metrics -->
-          <div class="grid grid-cols-4 gap-2 text-center">
-            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] font-bold text-slate-400 uppercase">Staff Duty ON</div>
-              <div class="text-lg font-black text-emerald-400 mt-0.5">{{ floorStats.staffCount?.dutyOn || 0 }}</div>
-            </div>
-            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] font-bold text-slate-400 uppercase">Pending Orders</div>
-              <div class="text-lg font-black text-amber-400 mt-0.5">{{ floorStats.summary?.pending || 0 }}</div>
-            </div>
-            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] font-bold text-slate-400 uppercase">Picking Now</div>
-              <div class="text-lg font-black text-cyan-400 mt-0.5">{{ floorStats.summary?.picking || 0 }}</div>
-            </div>
-            <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div class="text-[10px] font-bold text-slate-400 uppercase">Ready Dispatch</div>
-              <div class="text-lg font-black text-purple-400 mt-0.5">{{ floorStats.summary?.dispatchReady || 0 }}</div>
-            </div>
-          </div>
-
-          <!-- Quick Action Buttons -->
-          <div class="flex items-center gap-2">
-            <button @click="triggerManagerAutoAssign" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2 rounded-lg text-xs flex items-center justify-center gap-1 shadow-lg">
-              <i class="bi bi-lightning-charge-fill"></i> Trigger Auto-Assign Engine
-            </button>
-            <button @click="openRtvModal" class="bg-slate-800 hover:bg-slate-700 text-white font-bold px-3 py-2 rounded-lg text-xs border border-slate-700 flex items-center gap-1">
-              <i class="bi bi-file-earmark-text-fill"></i> RTV Gatepass
-            </button>
-          </div>
-
-          <!-- Staff Shift & Attendance Live Table -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-black uppercase text-white tracking-wider flex items-center gap-1.5">
-                <i class="bi bi-people-fill text-amber-400"></i> Floor Staff Attendance & Duty
-              </h4>
-              <button @click="fetchFloorStatus" class="text-[11px] text-slate-400 hover:text-white">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
-              </button>
-            </div>
-
-            <div class="divide-y divide-slate-800/80 max-h-60 overflow-y-auto">
-              <div v-for="staff in floorStats.staff" :key="staff.userId" class="py-2 flex items-center justify-between text-xs">
-                <div class="flex items-center gap-2">
-                  <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs uppercase overflow-hidden border border-slate-700">
-                    <img v-if="staff.selfieUrl" :src="staff.selfieUrl" class="w-full h-full object-cover">
-                    <span v-else>{{ staff.name.charAt(0) }}</span>
+                <div class="row g-2 mt-2">
+                  <div class="col-6">
+                    <button type="button" @click="navigateToStep('step4')" class="btn btn-outline-light w-100 btn-sm rounded-pill fw-bold">
+                      Admin
+                    </button>
                   </div>
-                  <div>
-                    <div class="font-bold text-white flex items-center gap-1.5">
-                      {{ staff.name }}
-                      <span class="text-[9px] px-1.5 py-0.2 rounded font-black uppercase" :class="getRoleBadgeClass(staff.role)">
-                        {{ staff.role }}
+                  <div class="col-6">
+                    <button type="button" @click="acceptManagerApproval" class="btn btn-success w-100 btn-sm rounded-pill fw-bold text-dark">
+                      Accept
+                    </button>
+                  </div>
+                </div>
+                <small class="text-white-50 text-center mt-2 d-block" style="font-size: 11px;">
+                  The on-duty manager provides to unlock the shift.
+                </small>
+              </div>
+
+              <!-- Sub-Card 2: WORKER PUNCH-IN & SELFIE GEOFENCE -->
+              <div class="card wms-card border-0 shadow-sm p-4 text-center">
+                <h6 class="fw-bold text-uppercase mb-0 text-dark">PUNCH-IN</h6>
+                <small class="text-muted d-block mb-3">(Enter Manager OTP to Unlock)</small>
+
+                <!-- 4 Distinct OTP Digits -->
+                <div class="d-flex justify-content-center gap-2 mb-3">
+                  <input v-for="(digit, idx) in pinDigits" :key="idx"
+                    :id="'pinInput_' + idx"
+                    type="tel"
+                    maxlength="1"
+                    :value="digit"
+                    @input="onDigitInput(idx, $event)"
+                    @keydown="onDigitKeydown(idx, $event)"
+                    class="otp-input-box">
+                </div>
+
+                <!-- Camera Selfie Frame with Face Brackets -->
+                <div class="face-scanner-frame my-2">
+                  <span class="face-bracket face-bracket-tl"></span>
+                  <span class="face-bracket face-bracket-tr"></span>
+                  <span class="face-bracket face-bracket-bl"></span>
+                  <span class="face-bracket face-bracket-br"></span>
+
+                  <img v-if="selfiePreview" :src="selfiePreview" class="w-100 h-100 object-fit-cover">
+                  <div v-else class="text-center p-2">
+                    <i class="bi bi-person-fill text-muted fs-1 d-block mb-1"></i>
+                    <button type="button" @click="$refs.cameraInput?.click()" class="btn btn-link text-success p-0 text-decoration-none small fw-bold">
+                      <i class="bi bi-camera-fill me-1"></i> Tap Selfie
+                    </button>
+                  </div>
+                  <input type="file" ref="cameraInput" accept="image/*" capture="user" @change="onSelfieSelected" class="d-none">
+                </div>
+
+                <!-- Geofence Badge -->
+                <div class="alert alert-success d-flex align-items-center justify-content-center gap-2 py-2 px-3 rounded-pill mb-3 small fw-bold">
+                  <i class="bi bi-geo-alt-fill text-success fs-6"></i>
+                  <span>Selfie + GPS Geofence Check (50m radius scan badge)</span>
+                </div>
+
+                <button type="button" @click="submitPinUnlock" class="btn btn-emerald w-100 py-2.5 text-uppercase">
+                  Verify OTP & Unlock Shift
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- STEP 3. SLOT BOOKING & ATTENDANCE HISTORY                                  -->
+        <!-- ========================================================================= -->
+        <section v-else-if="activeWorkflowStep === 'step3'" class="animate-fadeInScale py-2">
+          <!-- Header Bar -->
+          <div class="wms-purple-header rounded-4 p-3 d-flex justify-content-between align-items-center mb-3 shadow-sm">
+            <div class="d-flex align-items-center gap-2">
+              <button @click="navigateToStep('step4')" class="btn btn-link text-white p-0 me-1" title="Back to Home">
+                <i class="bi bi-arrow-left fs-5"></i>
+              </button>
+              <h5 class="mb-0 fw-bold text-white text-uppercase">Slot Booking & Attendance History</h5>
+            </div>
+            <button @click="navigateToStep('step4')" class="btn btn-sm btn-outline-light rounded-pill px-3 fw-bold">
+              Home Dashboard ➔
+            </button>
+          </div>
+
+          <!-- Responsive 2-Column Grid on PC, Stacked on Mobile -->
+          <div class="row g-3">
+            <!-- Left Column: Slot Booking -->
+            <div class="col-12 col-md-6">
+              <div class="card wms-card border-0 shadow-sm p-4 h-100">
+                <h6 class="fw-bolder text-uppercase text-dark mb-3 d-flex align-items-center gap-2">
+                  <i class="bi bi-calendar-check text-success"></i> Slot Booking
+                </h6>
+
+                <!-- Weekday Calendar Strip -->
+                <div class="bg-light p-2 rounded-4 border mb-3">
+                  <div class="d-flex justify-content-between text-center gap-1">
+                    <button v-for="(item, idx) in mockWeekDays" :key="idx"
+                      @click="selectedWeekIndex = idx"
+                      class="btn btn-sm rounded-3 flex-fill p-1 transition"
+                      :class="selectedWeekIndex === idx ? 'btn-success text-dark font-black shadow-sm' : 'btn-light border-0 text-muted'">
+                      <small class="d-block text-uppercase fw-bold" style="font-size: 10px;">{{ item.day }}</small>
+                      <span class="fs-6 fw-bold mt-0.5 d-inline-block">{{ item.date }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Shift Cards -->
+                <div class="d-flex flex-column gap-2.5">
+                  <div class="p-3 rounded-4 border-2 border-success bg-success bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                      <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                      <div>
+                        <h6 class="mb-0 fw-bold text-dark">Morning Shift</h6>
+                        <small class="text-muted font-monospace">6:00 AM - 2:00 PM</small>
+                      </div>
+                    </div>
+                    <span class="badge bg-success text-dark rounded-pill px-3 py-1.5 fw-bold">Selected</span>
+                  </div>
+
+                  <div class="p-3 rounded-4 border bg-white d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                      <i class="bi bi-circle text-muted fs-5"></i>
+                      <div>
+                        <h6 class="mb-0 fw-bold text-dark">Afternoon Shift</h6>
+                        <small class="text-muted font-monospace">2:00 PM - 10:00 PM</small>
+                      </div>
+                    </div>
+                    <button @click="showToast('Afternoon Shift Selected')" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                      Select
+                    </button>
+                  </div>
+
+                  <div class="p-3 rounded-4 border bg-white d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                      <i class="bi bi-circle text-muted fs-5"></i>
+                      <div>
+                        <h6 class="mb-0 fw-bold text-dark">Night Shift</h6>
+                        <small class="text-muted font-monospace">10:00 PM - 6:00 AM</small>
+                      </div>
+                    </div>
+                    <button @click="showToast('Night Shift Selected')" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                      Select
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Attendance History Month View -->
+            <div class="col-12 col-md-6">
+              <div class="card wms-card border-0 shadow-sm p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h6 class="fw-bolder text-uppercase text-dark mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-calendar3 text-primary"></i> Attendance History
+                  </h6>
+                  <span class="badge bg-light text-dark border font-monospace">January 2022</span>
+                </div>
+
+                <!-- Calendar Grid -->
+                <div class="bg-light p-3 rounded-4 border mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                    <button class="btn btn-sm btn-link text-muted p-0"><i class="bi bi-chevron-left"></i></button>
+                    <span class="fw-bold text-dark small">January 2022</span>
+                    <button class="btn btn-sm btn-link text-muted p-0"><i class="bi bi-chevron-right"></i></button>
+                  </div>
+
+                  <div class="row g-1 text-center text-muted fw-bold mb-1" style="font-size: 11px;">
+                    <div class="col">Sun</div><div class="col">Mon</div><div class="col">Tue</div><div class="col">Wed</div><div class="col">Thu</div><div class="col">Fri</div><div class="col">Sat</div>
+                  </div>
+
+                  <div class="row g-1 text-center font-monospace" style="font-size: 12px;">
+                    <div v-for="(cd, idx) in mockCalendarDays" :key="idx" class="col" style="flex: 0 0 14.28%;">
+                      <span class="badge rounded-circle d-inline-flex align-items-center justify-content-center p-0"
+                            style="width: 26px; height: 26px;"
+                            :class="cd.worked ? 'bg-success text-dark font-black shadow-sm' : (cd.inactive ? 'text-black-50' : 'text-dark')">
+                        {{ cd.day }}
                       </span>
                     </div>
-                    <div class="text-[10px] text-slate-400">
-                      In: {{ staff.punchInTime }} (Shift: {{ staff.slot }})
-                    </div>
                   </div>
                 </div>
 
-                <div class="text-right">
-                  <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
-                    :class="staff.duty === 'ON' ? (staff.onBreak ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400') : 'bg-slate-800 text-slate-500'">
-                    {{ staff.onBreak ? 'ON BREAK' : staff.duty }}
-                  </span>
-                  <div class="text-[10px] text-slate-400 font-mono mt-0.5">{{ staff.activeTask }}</div>
+                <!-- Confirmed Shift Summary Card -->
+                <div class="p-3 bg-light rounded-4 border d-flex justify-content-between align-items-center">
+                  <div>
+                    <div class="fw-bold text-dark small d-flex align-items-center gap-1.5">
+                      <i class="bi bi-check-circle-fill text-success"></i> Yesterday
+                    </div>
+                    <small class="text-muted d-block mt-0.5">10 PM - 2 PM, 8 hrs, Confirmed</small>
+                    <small class="text-success fw-bold">Earned ₹1,020</small>
+                  </div>
+                  <div class="text-end">
+                    <span class="fs-4 fw-bolder font-monospace text-success">₹1,020</span>
+                  </div>
                 </div>
+
               </div>
             </div>
           </div>
 
-          <!-- Discrepancy Approval Desk -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-            <h4 class="text-xs font-black uppercase text-rose-400 tracking-wider flex items-center gap-1.5">
-              <i class="bi bi-shield-exclamation"></i> Discrepancy Approvals (Damage / Shortage)
-            </h4>
+          <div class="mt-3">
+            <button @click="navigateToStep('step4')" class="btn btn-emerald w-100 py-2.5 text-uppercase">
+              Proceed to Home Dashboard ➔
+            </button>
+          </div>
+        </section>
 
-            <div v-if="discrepancies.length === 0" class="text-xs text-slate-500 text-center py-3">
-              No pending discrepancies reported.
+        <!-- ========================================================================= -->
+        <!-- STEP 4. MAIN TASK DASHBOARD SCREEN                                         -->
+        <!-- ========================================================================= -->
+        <section v-else-if="activeWorkflowStep === 'step4'" class="animate-fadeInScale py-2">
+          <!-- Top Wallet Header Bar (Gold Coin + Balance + Earnings) -->
+          <div class="wms-purple-header rounded-4 p-3 d-flex justify-content-between align-items-center mb-3 shadow-sm">
+            <div class="d-flex align-items-center gap-2">
+              <div class="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center fw-bold fs-6 shadow-sm" style="width: 34px; height: 34px;">
+                <i class="bi bi-coin"></i>
+              </div>
+              <span class="fw-bolder tracking-wider text-warning text-uppercase small">WALLET</span>
+            </div>
+            <div class="text-end font-monospace small">
+              <span class="text-white-50">Balance: <strong class="text-white">₹{{ walletData.availableBalance ? walletData.availableBalance.toFixed(0) : '1,450' }}</strong></span>
+              <span class="text-white-50 mx-2">|</span>
+              <span class="text-success">Today: <strong>+₹{{ walletData.todayEarnings || 240 }}</strong></span>
+            </div>
+          </div>
+
+          <!-- Active On Duty Worker Banner -->
+          <div class="worker-active-banner mb-3 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-3">
+              <div class="rounded-4 bg-white bg-opacity-25 text-white d-flex align-items-center justify-center fs-2 shadow-sm border border-white border-opacity-25" style="width: 54px; height: 54px;">
+                <i class="bi bi-person-badge-fill"></i>
+              </div>
+              <div>
+                <small class="text-white-50 text-uppercase fw-bold d-block" style="font-size: 10px;">Active On Duty</small>
+                <h5 class="fw-bold mb-0 text-white text-capitalize">{{ user.name || 'Staff Associate' }}</h5>
+                <small class="text-white-50 font-monospace">{{ user.role || 'Picker' }} • Staff #{{ user.staffId || '101' }}</small>
+              </div>
             </div>
 
-            <div v-for="disc in discrepancies" :key="disc.ticketId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5 text-xs">
-              <div class="flex items-center justify-between">
-                <span class="font-black text-rose-400 font-mono">{{ disc.ticketId }}</span>
-                <span class="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded font-bold">{{ disc.damageType }}</span>
-              </div>
-              <div class="text-slate-300">
-                PO: <strong class="text-white">{{ disc.poNumber }}</strong> | SKU: <strong class="text-white">{{ disc.sku }}</strong> | Qty: <strong class="text-white">{{ disc.quantity }}</strong>
-              </div>
-              <div class="text-[11px] text-slate-400">Reported by: {{ disc.reportedBy }}</div>
+            <div class="text-end d-flex flex-column align-items-end gap-1">
+              <span class="badge bg-white text-success rounded-pill px-3 py-1.5 fw-bold shadow-sm">
+                {{ duty.onBreak ? 'ON BREAK' : (duty.duty === 'ON' ? 'IDLE / READY' : 'OFF DUTY') }}
+              </span>
+              <button v-if="duty.duty === 'ON'" @click="punchOut" class="btn btn-link text-white text-decoration-none small p-0 opacity-75">
+                Punch Out
+              </button>
+            </div>
+          </div>
 
-              <!-- Preview Photo if attached -->
-              <div v-if="disc.photoUrl" class="mt-1">
-                <a :href="disc.photoUrl" target="_blank" class="text-[11px] text-cyan-400 hover:underline flex items-center gap-1">
-                  <i class="bi bi-image"></i> View Damage Proof Photo (MinIO)
-                </a>
+          <!-- Segment Tabs: TASKS | PROFILE -->
+          <div class="btn-group w-100 bg-white p-1 rounded-4 shadow-sm border mb-3">
+            <button @click="dashboardSegment = 'tasks'" class="btn py-2 rounded-3 fw-bold"
+              :class="dashboardSegment === 'tasks' ? 'btn-dark text-white font-black shadow-sm' : 'text-muted'">
+              TASKS
+            </button>
+            <button @click="dashboardSegment = 'profile'" class="btn py-2 rounded-3 fw-bold"
+              :class="dashboardSegment === 'profile' ? 'btn-dark text-white font-black shadow-sm' : 'text-muted'">
+              PROFILE
+            </button>
+          </div>
+
+          <!-- SUB-TAB A: 3 HERO TASK ACTION CARDS -->
+          <div v-if="dashboardSegment === 'tasks'" class="animate-fadeInScale">
+            <!-- 3 Hero Action Cards (1 Column on Mobile, 3 Columns on PC) -->
+            <div class="row g-3 mb-3">
+              <!-- 1. PICKER (Pick orders) -->
+              <div class="col-12 col-md-4">
+                <div @click="selectHeroTask('picker')" class="hero-task-picker h-100 d-flex justify-content-between align-items-center">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="number-circle-badge">1.</span>
+                    <div>
+                      <h5 class="fw-bolder mb-0 tracking-wide text-white">PICKER</h5>
+                      <small class="text-white-50 font-weight-bold">(Pick orders)</small>
+                    </div>
+                  </div>
+                  <i class="bi bi-chevron-right fs-4 text-white-50"></i>
+                </div>
               </div>
 
-              <div class="flex items-center gap-2 pt-1 border-t border-slate-800">
-                <button @click="resolveDiscrepancy(disc.ticketId, 'APPROVED_FOR_RTV')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1 rounded text-[11px]">
-                  Approve for RTV
+              <!-- 2. PUT-AWAY (New / Customer Returns) -->
+              <div class="col-12 col-md-4">
+                <div @click="selectHeroTask('putter')" class="hero-task-putaway h-100 d-flex justify-content-between align-items-center">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="number-circle-badge">2.</span>
+                    <div>
+                      <h5 class="fw-bolder mb-0 tracking-wide text-white">PUT-AWAY</h5>
+                      <small class="text-white-50 font-weight-bold">(New / Customer Returns)</small>
+                    </div>
+                  </div>
+                  <i class="bi bi-chevron-right fs-4 text-white-50"></i>
+                </div>
+              </div>
+
+              <!-- 3. TRANSFER / MOVE (Shelf Shifting & Store RTV) -->
+              <div class="col-12 col-md-4">
+                <div @click="selectHeroTask('transfer')" class="hero-task-transfer h-100 d-flex justify-content-between align-items-center">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="number-circle-badge">3.</span>
+                    <div>
+                      <h5 class="fw-bolder mb-0 tracking-wide text-white">TRANSFER / MOVE</h5>
+                      <small class="text-white-50 font-weight-bold">(Shelf Shifting & Store RTV)</small>
+                    </div>
+                  </div>
+                  <i class="bi bi-chevron-right fs-4 text-white-50"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- Additional Warehouse Stations Grid -->
+            <div class="row g-3">
+              <div class="col-12 col-md-4">
+                <button @click="selectHeroTask('packer')" class="btn btn-white w-100 bg-white border text-start p-3 rounded-4 shadow-sm h-100">
+                  <span class="badge bg-primary-subtle text-primary mb-1">Station 4</span>
+                  <h6 class="fw-bold mb-0 text-dark">Packer & Bagging</h6>
+                  <small class="text-muted d-block">Tally, Bag Seal & Dispatch Bay</small>
                 </button>
-                <button @click="resolveDiscrepancy(disc.ticketId, 'REJECTED')" class="bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold px-2.5 py-1 rounded text-[11px] border border-slate-700">
-                  Reject
+              </div>
+
+              <div class="col-12 col-md-4">
+                <button @click="selectHeroTask('inward')" class="btn btn-white w-100 bg-white border text-start p-3 rounded-4 shadow-sm h-100">
+                  <span class="badge bg-success-subtle text-success mb-1">Station 5</span>
+                  <h6 class="fw-bold mb-0 text-dark">Inward Receiving Dock</h6>
+                  <small class="text-muted d-block">PO Cartons & Staging Pallets</small>
+                </button>
+              </div>
+
+              <div class="col-12 col-md-4">
+                <button @click="selectHeroTask('manager')" class="btn btn-dark w-100 text-start p-3 rounded-4 shadow-sm h-100 d-flex justify-content-between align-items-center">
+                  <div>
+                    <span class="badge bg-danger-subtle text-danger mb-1">Supervisor Deck</span>
+                    <h6 class="fw-bold mb-0 text-white">Floor Lead Dashboard</h6>
+                    <small class="text-white-50 d-block">Attendance PIN, Force Checkout/Logout</small>
+                  </div>
+                  <i class="bi bi-shield-lock-fill text-danger fs-3"></i>
                 </button>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- ======================================================== -->
-        <!-- 6. AUDIT TRAIL VIEW                                      -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'audit'" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
-          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-            <h3 class="text-xs font-black uppercase text-white tracking-wider flex items-center gap-1.5">
-              <i class="bi bi-journal-check text-indigo-400"></i> Warehouse Audit Trail (PostgreSQL)
-            </h3>
-            <button @click="fetchAuditLogs" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
-              <i class="bi bi-arrow-clockwise"></i> Refresh
-            </button>
-          </div>
-
-          <div class="space-y-2 max-h-[500px] overflow-y-auto">
-            <div v-for="log in auditLogs" :key="log.logId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80 text-xs space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-indigo-400 font-mono text-[11px]">{{ log.action }}</span>
-                <span class="text-[10px] text-slate-500">{{ new Date(log.time).toLocaleTimeString() }}</span>
-              </div>
-              <div class="text-slate-300 text-[11px]">
-                By: <strong class="text-white">{{ log.user?.name || 'Staff' }}</strong> ({{ log.user?.role }}) | Table: <code class="text-amber-400 font-mono">{{ log.tableName }}</code>
-              </div>
-              <div v-if="log.details" class="bg-slate-950 p-1.5 rounded font-mono text-[10px] text-slate-400 truncate">
-                {{ typeof log.details === 'object' ? JSON.stringify(log.details) : log.details }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 7. STEP 7: TRANSFER & MOVE (INTERNAL & STORE-TO-STORE)   -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'transfer'" class="space-y-3">
-          <!-- Sub-tabs -->
-          <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold overflow-x-auto scrollbar-none">
-            <button @click="transferTab = 'internal'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
-              :class="transferTab === 'internal' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-              <i class="bi bi-box-arrow-in-right"></i> Internal Shelf Move
-            </button>
-            <button @click="transferTab = 'dispatch'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
-              :class="transferTab === 'dispatch' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-              <i class="bi bi-truck"></i> Store-to-Store Dispatch
-            </button>
-            <button @click="transferTab = 'receive'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
-              :class="transferTab === 'receive' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-              <i class="bi bi-shield-check"></i> Inbound Receive
-            </button>
-            <button @click="transferTab = 'history'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition"
-              :class="transferTab === 'history' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'">
-              <i class="bi bi-clock-history"></i> Move History
-            </button>
-          </div>
-
-          <!-- A. Internal Shelf-to-Shelf Move -->
-          <div v-if="transferTab === 'internal'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
-            <div class="border-b border-slate-800 pb-2">
-              <h3 class="font-black text-sm text-white flex items-center gap-2">
-                <i class="bi bi-arrow-left-right text-blue-400"></i> Internal Shelf-to-Shelf Relocation
-              </h3>
-              <p class="text-[11px] text-slate-400">Consolidate or rebalance stock between shelf bins inside the dark store</p>
-            </div>
-
-            <form @submit.prevent="submitInternalMove" class="space-y-3 text-xs">
-              <div>
-                <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Select Product / Variant</label>
-                <select v-model="internalMoveForm.variantId" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
-                  <option v-for="item in inventoryItems" :key="item.variantId" :value="item.variantId">
-                    {{ item.productName }} ({{ item.sku }}) — Cur: {{ item.currentShelf }} [Qty: {{ item.onHandQty }}]
-                  </option>
-                </select>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Source Shelf Bin</label>
-                  <input v-model="internalMoveForm.sourceShelf" required placeholder="e.g. Aisle-01-Rack-01-S01"
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+          <!-- SUB-TAB B: WORKER PROFILE & KPIS -->
+          <div v-else-if="dashboardSegment === 'profile'" class="animate-fadeInScale">
+            <div class="card wms-card border-0 shadow-sm p-4">
+              <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="rounded-circle bg-dark text-white d-flex align-items-center justify-center fs-3 fw-bold" style="width: 54px; height: 54px;">
+                  {{ user.name ? user.name.charAt(0) : 'W' }}
                 </div>
                 <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Target Shelf Bin</label>
-                  <input v-model="internalMoveForm.targetShelf" required placeholder="e.g. Aisle-01-Rack-02-S02"
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+                  <h5 class="fw-bold mb-0 text-dark">{{ user.name }}</h5>
+                  <p class="text-muted font-monospace small mb-1">{{ user.mobile || '9985699757' }}</p>
+                  <span class="badge bg-secondary-subtle text-secondary rounded-pill px-3">{{ user.role }} • Dark Store #01</span>
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Quantity to Move</label>
-                  <input v-model="internalMoveForm.qty" type="number" min="1" required
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
+              <!-- Scorecard -->
+              <div class="row g-2 text-center py-3 border-top border-bottom mb-3">
+                <div class="col-4">
+                  <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 11px;">Today Picks</small>
+                  <span class="fs-4 fw-bolder font-monospace text-dark">{{ walletData.todayBreakdown?.completedPicksCount || 18 }}</span>
                 </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Reason / Purpose</label>
-                  <select v-model="internalMoveForm.reason" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
-                    <option value="Stock Relocation">Stock Relocation</option>
-                    <option value="Consolidation">Bin Consolidation</option>
-                    <option value="Hygiene Re-rack (Heavy Bottom)">Hygiene Re-rack (Heavy Bottom)</option>
-                    <option value="Damaged Isolation">Damaged Isolation</option>
-                  </select>
+                <div class="col-4 border-start border-end">
+                  <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 11px;">Avg Speed</small>
+                  <span class="fs-4 fw-bolder font-monospace text-success">72s</span>
+                </div>
+                <div class="col-4">
+                  <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 11px;">Accuracy</small>
+                  <span class="fs-4 fw-bolder font-monospace text-primary">99.4%</span>
                 </div>
               </div>
 
-              <button type="submit" :disabled="isSubmittingTransfer"
-                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
-                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-                <span v-else><i class="bi bi-check2-circle"></i> Execute Shelf Move</span>
+              <div class="p-3 bg-light rounded-4 border mb-3">
+                <small class="text-muted text-uppercase fw-bold d-block mb-1">Settlement Account</small>
+                <div class="fw-bold text-dark">{{ walletData.bankAccount?.bankName || 'State Bank of India' }}</div>
+                <small class="text-success font-monospace">UPI: {{ walletData.bankAccount?.upi || '9985699757@paytm' }}</small>
+              </div>
+
+              <button @click="logout" class="btn btn-outline-danger w-100 rounded-pill py-2 fw-bold">
+                <i class="bi bi-box-arrow-right me-1"></i> Logout from PDA
               </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================================= -->
+        <!-- ACTIVE TASK VIEW (Picker / Put-away / Transfer Task Workspaces)            -->
+        <!-- ========================================================================= -->
+        <section v-else-if="activeWorkflowStep === 'active_task'" class="animate-fadeInScale py-2">
+          <!-- Back Bar -->
+          <div class="wms-purple-header rounded-4 p-3 d-flex justify-content-between align-items-center mb-3 shadow-sm">
+            <button @click="navigateToStep('step4')" class="btn btn-link text-white text-decoration-none fw-bold small p-0">
+              <i class="bi bi-arrow-left me-1"></i> Home Dashboard
+            </button>
+            <h6 class="mb-0 fw-bold text-warning text-uppercase">
+              {{ currentTab === 'picker' ? '1. Outbound Picker' : (currentTab === 'putter' ? '2. Put-away Loader' : '3. Transfer & Move') }}
+            </h6>
+            <button @click="navigateToStep('step4')" class="btn btn-link text-white p-0">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+
+          <!-- 1. PICKER WORKFLOW -->
+          <div v-if="currentTab === 'picker'" class="space-y-3">
+            <div v-if="pickerTask" class="card wms-card border-0 shadow-sm p-4">
+              <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+                <div>
+                  <span class="badge bg-warning text-dark font-monospace text-uppercase">PickList #{{ pickerTask.pickListId }}</span>
+                  <h5 class="fw-bold mt-1 text-dark">Order #{{ pickerTask.orderId }}</h5>
+                </div>
+                <div class="text-end">
+                  <span class="badge bg-success-subtle text-success font-monospace">Target: 60-90s</span>
+                  <div class="small text-muted mt-1">{{ pickerTask.totalPicked }} / {{ pickerTask.totalItems }} Items Picked</div>
+                </div>
+              </div>
+
+              <!-- Item Pick List -->
+              <div class="d-flex flex-column gap-2 mb-3">
+                <div v-for="item in pickerTask.items" :key="item.itemId" class="p-3 bg-light rounded-4 border">
+                  <div class="d-flex align-items-center gap-3">
+                    <img :src="item.imageUrl" class="rounded-3 border object-fit-cover bg-white" style="width: 48px; height: 48px;">
+                    <div class="flex-grow-1">
+                      <span class="badge bg-dark text-warning font-monospace"><i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ item.shelfCode }}</span>
+                      <h6 class="mb-0 fw-bold text-dark mt-1">{{ item.productName }}</h6>
+                      <small class="text-muted font-monospace">SKU: {{ item.sku }} | Qty: <strong>{{ item.qtyToPick }}</strong></small>
+                    </div>
+                  </div>
+
+                  <div v-if="item.status !== 'PICKED'" class="d-flex gap-2 mt-2 pt-2 border-top">
+                    <input v-model="scanInputs[item.itemId]" @keyup.enter="scanPickItem(item)" placeholder="Scan Barcode..." class="form-control form-control-sm font-monospace">
+                    <button @click="scanPickItem(item)" class="btn btn-sm btn-success fw-bold text-dark px-3">Scan</button>
+                  </div>
+                  <div v-else class="text-success small fw-bold mt-2">
+                    <i class="bi bi-check-circle-fill me-1"></i> ITEM PICKED
+                  </div>
+                </div>
+              </div>
+
+              <button @click="completePickOrder" :disabled="pickerTask.totalPicked < pickerTask.totalItems"
+                class="btn btn-emerald w-100 py-2.5 text-uppercase">
+                Complete Order & Pick Next
+              </button>
+            </div>
+
+            <!-- Empty State -->
+            <div v-else class="card wms-card border-0 shadow-sm p-5 text-center">
+              <i class="bi bi-hourglass-split text-warning fs-1 d-block mb-2"></i>
+              <h5 class="fw-bold text-dark">No Picking Order Active</h5>
+              <p class="text-muted small mb-0">Floor Lead ya Auto-assign engine order aate hi aapko assign karega.</p>
+            </div>
+          </div>
+
+          <!-- 2. PUT-AWAY WORKFLOW -->
+          <div v-else-if="currentTab === 'putter'">
+            <div v-for="task in putawayTasks" :key="task.taskId" class="card wms-card border-0 shadow-sm p-4 mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-info text-dark font-monospace">{{ task.palletId }}</span>
+                <span class="small fw-bold">Qty: {{ task.quantity }}</span>
+              </div>
+              <h6 class="fw-bold text-dark">{{ task.productName }}</h6>
+              <div class="bg-light p-3 rounded-4 border d-flex justify-content-between align-items-center my-2">
+                <small class="text-muted text-uppercase fw-bold">Suggested Target Bin:</small>
+                <strong class="font-monospace text-primary fs-6">{{ task.suggestedBin }}</strong>
+              </div>
+              <div class="d-flex gap-2 mt-2">
+                <input v-model="task.scannedBinInput" placeholder="Scan Target Bin..." class="form-control form-control-sm font-monospace">
+                <button @click="verifyPutawayBin(task)" class="btn btn-sm btn-primary px-3 fw-bold">Verify</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. TRANSFER / MOVE WORKFLOW -->
+          <div v-else-if="currentTab === 'transfer'" class="card wms-card border-0 shadow-sm p-4">
+            <h6 class="fw-bold text-uppercase mb-3">Internal Shelf Relocation</h6>
+            <form @submit.prevent="submitInternalMove" class="d-flex flex-column gap-3">
+              <select v-model="internalMoveForm.variantId" class="form-select form-select-sm">
+                <option v-for="item in inventoryItems" :key="item.variantId" :value="item.variantId">
+                  {{ item.productName }} ({{ item.sku }})
+                </option>
+              </select>
+              <div class="row g-2">
+                <div class="col-6">
+                  <input v-model="internalMoveForm.sourceShelf" required placeholder="From Bin" class="form-control form-control-sm font-monospace">
+                </div>
+                <div class="col-6">
+                  <input v-model="internalMoveForm.targetShelf" required placeholder="To Bin" class="form-control form-control-sm font-monospace">
+                </div>
+              </div>
+              <button type="submit" class="btn btn-emerald py-2 text-uppercase">Execute Shelf Move</button>
             </form>
           </div>
 
-          <!-- B. Store-to-Store Transfer Dispatch -->
-          <div v-else-if="transferTab === 'dispatch'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
-            <div class="border-b border-slate-800 pb-2">
-              <h3 class="font-black text-sm text-white flex items-center gap-2">
-                <i class="bi bi-truck text-cyan-400"></i> Inter-Store Transfer Dispatch (Dark Store to Dark Store)
-              </h3>
-              <p class="text-[11px] text-slate-400">Issue transfer order manifest with tamper-proof security seal</p>
-            </div>
-
-            <form @submit.prevent="submitStoreDispatch" class="space-y-3 text-xs">
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Destination Dark Store</label>
-                  <select v-model="storeDispatchForm.toStoreId" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
-                    <option v-for="s in storesList" :key="s.storeId" :value="s.storeId">{{ s.name }}</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Item SKU</label>
-                  <select v-model="storeDispatchForm.variantId" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
-                    <option v-for="item in inventoryItems" :key="item.variantId" :value="item.variantId">
-                      {{ item.productName }} ({{ item.sku }})
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transfer Quantity</label>
-                  <input v-model="storeDispatchForm.qty" type="number" min="1" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-cyan-400 uppercase mb-1">Security Seal Barcode</label>
-                  <input v-model="storeDispatchForm.sealNo" required placeholder="e.g. SEAL-8891" class="w-full bg-slate-900 border border-cyan-500/50 rounded-lg p-2 text-white font-mono text-xs font-bold">
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transporter Fleet</label>
-                  <input v-model="storeDispatchForm.transporter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Vehicle Number</label>
-                  <input v-model="storeDispatchForm.vehicleNo" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs font-mono">
-                </div>
-              </div>
-
-              <button type="submit" :disabled="isSubmittingTransfer"
-                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
-                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-                <span v-else><i class="bi bi-box-seam"></i> Issue Inter-Store Transfer Manifest</span>
-              </button>
-            </form>
+          <!-- 4. PACKER TABLE -->
+          <div v-else-if="currentTab === 'packer'" class="card wms-card border-0 shadow-sm p-4">
+            <h6 class="fw-bold text-uppercase text-primary mb-2">Packing Table & Bagging Station</h6>
+            <p class="text-muted small mb-0">Tally items, scan bag seal code, scale weight, and handover to Bay.</p>
           </div>
 
-          <!-- C. Store-to-Store Inbound Receive -->
-          <div v-else-if="transferTab === 'receive'" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
-            <div class="border-b border-slate-800 pb-2">
-              <h3 class="font-black text-sm text-white flex items-center gap-2">
-                <i class="bi bi-shield-check text-emerald-400"></i> Inbound Transfer Receiving & Put-away
-              </h3>
-              <p class="text-[11px] text-slate-400">Scan incoming vehicle manifest and verify security seal before placement</p>
-            </div>
-
-            <form @submit.prevent="submitStoreReceive" class="space-y-3 text-xs">
-              <div>
-                <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Transfer Manifest Number</label>
-                <input v-model="storeReceiveForm.transferNo" required placeholder="e.g. STO-20261102-1234"
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[11px] font-bold text-emerald-400 uppercase mb-1">Scan Security Seal</label>
-                  <input v-model="storeReceiveForm.sealNo" required placeholder="Scan seal barcode"
-                    class="w-full bg-slate-900 border border-emerald-500/50 rounded-lg p-2 text-white font-mono text-xs font-bold">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Put-away Shelf</label>
-                  <input v-model="storeReceiveForm.targetShelf" required placeholder="e.g. Aisle-01-Rack-01-S01"
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs">
-                </div>
-              </div>
-
-              <button type="submit" :disabled="isSubmittingTransfer"
-                class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2">
-                <span v-if="isSubmittingTransfer" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-                <span v-else><i class="bi bi-check-circle-fill"></i> Verify Seal & Inward Restock</span>
-              </button>
-            </form>
+          <!-- 5. INWARD DOCK -->
+          <div v-else-if="currentTab === 'inward'" class="card wms-card border-0 shadow-sm p-4">
+            <h6 class="fw-bold text-uppercase text-success mb-2">Inward Purchase Order Unloading</h6>
+            <p class="text-muted small mb-0">Unload Cartons from supplier trucks and tag staging pallets.</p>
           </div>
 
-          <!-- D. Transfer History -->
-          <div v-else-if="transferTab === 'history'" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
-                <i class="bi bi-clock-history text-blue-400"></i> Movement & Transfer Log
-              </h3>
-              <button @click="fetchTransferHistory" class="text-xs text-blue-400 hover:underline">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
-              </button>
-            </div>
-
-            <div v-if="transferHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
-              No recent movements logged.
-            </div>
-
-            <div v-for="h in transferHistory" :key="h.movementId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-blue-400 font-mono">{{ h.transferNo || `MOVE-#${h.movementId}` }}</span>
-                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
-                  :class="h.status === 'COMPLETED' || h.status === 'RECEIVED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-cyan-500/20 text-cyan-400'">
-                  {{ h.status }}
-                </span>
-              </div>
-              <div class="text-white font-bold">{{ h.productName }} (Qty: {{ h.qty }})</div>
-              <div class="text-[11px] text-slate-400">
-                From: <code class="text-slate-300 font-mono">{{ h.fromShelf }}</code> ➔ To: <code class="text-amber-300 font-mono">{{ h.toShelf }}</code>
-              </div>
-              <div class="text-[10px] text-slate-500 flex items-center justify-between pt-1">
-                <span>By: {{ h.operator || 'Staff' }}</span>
-                <span>{{ new Date(h.date).toLocaleDateString() }}</span>
-              </div>
-            </div>
+          <!-- 6. FLOOR LEAD -->
+          <div v-else-if="currentTab === 'manager'" class="card wms-card border-0 shadow-sm p-4">
+            <h6 class="fw-bold text-uppercase text-danger mb-2">Supervisor Floor Lead Deck</h6>
+            <p class="text-muted small mb-0">Staff attendance approval, 4-digit PIN generation, auto-assign trigger, and force actions.</p>
           </div>
-        </div>
+        </section>
 
-        <!-- ======================================================== -->
-        <!-- 8. STEP 3: SHIFTS & ATTENDANCE                           -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'shifts'" class="space-y-3">
-          <!-- Shift Slot Booking Card -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div>
-                <h3 class="font-black text-sm text-white flex items-center gap-1.5">
-                  <i class="bi bi-calendar2-range text-teal-400"></i> Dark Store Shift Slots
-                </h3>
-                <p class="text-[11px] text-slate-400">Book your upcoming shift slot to ensure guaranteed duty allocation</p>
-              </div>
-              <input v-model="selectedShiftDate" type="date" class="bg-slate-900 border border-slate-700 text-white rounded px-2 py-1 text-xs">
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div v-for="slot in shiftSlots" :key="slot.shiftId"
-                class="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 transition space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="font-black text-teal-400 text-xs">{{ slot.name }}</span>
-                  <span class="text-[10px] bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded font-mono font-bold">{{ slot.hours }} hrs</span>
-                </div>
-                <div class="text-xs text-white font-bold flex items-center gap-1">
-                  <i class="bi bi-clock"></i> {{ slot.time }}
-                </div>
-                <div class="text-[10px] text-amber-400 font-bold bg-amber-500/10 p-1 rounded border border-amber-500/20">
-                  <i class="bi bi-star-fill text-[9px]"></i> {{ slot.incentive }}
-                </div>
-                <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
-                  <span class="text-slate-400">{{ slot.availableSlots }} seats open</span>
-                  <button @click="bookShiftSlot(slot.code)" :disabled="isBookingSlot"
-                    class="bg-teal-600 hover:bg-teal-500 text-slate-950 font-black px-3 py-1 rounded text-xs transition">
-                    Book Slot
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Attendance History Card -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
-                <i class="bi bi-card-checklist text-teal-400"></i> My Shift Attendance History
-              </h3>
-              <button @click="fetchAttendanceHistory" class="text-xs text-teal-400 hover:underline">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
-              </button>
-            </div>
-
-            <div v-if="attendanceHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
-              No past attendance records found.
-            </div>
-
-            <div v-for="att in attendanceHistory" :key="att.dutyId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="font-black text-white">{{ new Date(att.date).toLocaleDateString() }} ({{ att.shiftSlot }})</span>
-                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
-                  :class="att.approvalStatus === 'APPROVED' || att.approvalStatus === 'ACTIVE' || att.approvalStatus === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
-                  {{ att.approvalStatus }}
-                </span>
-              </div>
-              <div class="text-[11px] text-slate-300">
-                In: <strong class="text-white">{{ att.punchInTime }}</strong> | Out: <strong class="text-white">{{ att.punchOutTime }}</strong> | Total: <strong class="text-amber-400">{{ att.totalHours }} hrs</strong>
-              </div>
-              <div class="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
-                <span>Manager PIN: <strong class="text-emerald-400 font-mono">{{ att.approvalCode }}</strong></span>
-                <span v-if="att.selfieUrl" class="text-cyan-400 flex items-center gap-1">
-                  <i class="bi bi-camera"></i> Selfie Verified
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- 9. STEP 8: WALLET, INCENTIVES & SETTLEMENT               -->
-        <!-- ======================================================== -->
-        <div v-if="currentTab === 'wallet'" class="space-y-3">
-          <!-- Wallet Balance & Today's Earnings Card -->
-          <div class="bg-gradient-to-br from-emerald-950 via-slate-950 to-slate-950 border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-3">
-            <div class="flex items-center justify-between">
-              <div>
-                <span class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
-                  <i class="bi bi-wallet2"></i> Worker Settlement Wallet
-                </span>
-                <div class="text-3xl font-black text-white font-mono mt-1">
-                  ₹{{ walletData.availableBalance ? walletData.availableBalance.toFixed(2) : '1,200.00' }}
-                </div>
-                <div class="text-[11px] text-emerald-300">Available to withdraw directly to Bank / UPI</div>
-              </div>
-
-              <div class="text-right">
-                <span class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-black uppercase">
-                  ACTIVE EARNINGS
-                </span>
-                <div class="text-xs font-mono font-bold text-slate-300 mt-1">
-                  Today: <span class="text-emerald-400 font-black">+₹{{ walletData.todayEarnings || 600 }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Today's Earnings Breakdown -->
-            <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 space-y-1.5 text-xs">
-              <div class="text-[11px] font-black text-amber-400 uppercase tracking-wide flex items-center justify-between">
-                <span>Today's Earning Breakdown</span>
-                <span class="text-slate-400 font-normal">Shift: {{ duty.slot || 'General' }}</span>
-              </div>
-              <div class="flex items-center justify-between text-slate-300">
-                <span>Base Daily Shift Wage (8 hrs):</span>
-                <strong class="text-white font-mono">₹{{ walletData.todayBreakdown?.baseDailyWage || 600 }}</strong>
-              </div>
-              <div class="flex items-center justify-between text-slate-300">
-                <span>Order Pick Incentives (₹15/order):</span>
-                <strong class="text-amber-400 font-mono">+₹{{ walletData.todayBreakdown?.pickingIncentive || 0 }}</strong>
-              </div>
-              <div class="flex items-center justify-between text-slate-300">
-                <span>Put-away Task Incentives (₹10/task):</span>
-                <strong class="text-cyan-400 font-mono">+₹{{ walletData.todayBreakdown?.putawayIncentive || 0 }}</strong>
-              </div>
-              <div class="flex items-center justify-between text-slate-300">
-                <span>100% Accuracy Bonus (Rate: {{ walletData.todayBreakdown?.accuracyRate || '99.4%' }}):</span>
-                <strong class="text-purple-400 font-mono">+₹{{ walletData.todayBreakdown?.accuracyBonus || 0 }}</strong>
-              </div>
-              <div class="border-t border-slate-800 pt-1.5 flex items-center justify-between font-bold text-white">
-                <span>Total Earned Today:</span>
-                <span class="text-emerald-400 text-sm font-mono font-black">₹{{ walletData.todayEarnings || 600 }}</span>
-              </div>
-            </div>
-
-            <!-- Linked Payout Account -->
-            <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
-              <div class="flex items-center gap-2">
-                <i class="bi bi-bank text-emerald-400 text-base"></i>
-                <div>
-                  <div class="font-bold text-white">{{ walletData.bankAccount?.bankName || 'State Bank of India' }} ({{ walletData.bankAccount?.accountNo || '••••8821' }})</div>
-                  <div class="text-[10px] text-slate-400">UPI ID: {{ walletData.bankAccount?.upi || '9985699757@paytm' }}</div>
-                </div>
-              </div>
-              <span class="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold">VERIFIED</span>
-            </div>
-
-            <!-- Request Payout Button / Form -->
-            <form @submit.prevent="submitPayoutRequest" class="space-y-2 pt-1">
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Withdraw Amount (₹)</label>
-                  <input v-model="payoutRequestForm.amount" type="number" min="100" required
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono font-bold text-xs">
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Payout Method</label>
-                  <select v-model="payoutRequestForm.paymentMethod" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
-                    <option value="UPI">Direct UPI Transfer</option>
-                    <option value="BANK_TRANSFER">Bank NEFT/IMPS</option>
-                    <option value="CASH">Dark Store Cash Desk</option>
-                  </select>
-                </div>
-              </div>
-
-              <button type="submit" :disabled="isRequestingPayout"
-                class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5">
-                <span v-if="isRequestingPayout" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-                <span v-else><i class="bi bi-send-check-fill"></i> Request Instant Settlement</span>
-              </button>
-            </form>
-          </div>
-
-          <!-- Payout History Table -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2.5 shadow-lg">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h3 class="font-black text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
-                <i class="bi bi-receipt-cutoff text-emerald-400"></i> Settlement Ledger & Payout History
-              </h3>
-              <button @click="fetchPayoutHistory" class="text-xs text-emerald-400 hover:underline">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
-              </button>
-            </div>
-
-            <div v-if="payoutHistory.length === 0" class="text-xs text-slate-500 text-center py-4">
-              No payout settlement records yet.
-            </div>
-
-            <div v-for="p in payoutHistory" :key="p.payoutId" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="font-mono font-black text-emerald-400 text-sm">₹{{ p.amount }}</span>
-                <span class="text-[10px] px-2 py-0.5 rounded font-black uppercase"
-                  :class="p.status === 'PAID' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'">
-                  {{ p.status }}
-                </span>
-              </div>
-              <div class="text-[11px] text-slate-300">
-                Method: <strong class="text-white">{{ p.paymentMethod }}</strong> | Base: ₹{{ p.basePay }} | Incentive: ₹{{ p.incentive }}
-              </div>
-              <div class="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
-                <span>Ref: <code class="text-amber-400 font-mono">{{ p.paymentRef || 'PENDING_APPROVAL' }}</code></span>
-                <span>{{ new Date(p.createdAt).toLocaleDateString() }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </section>
+      </div>
     </main>
 
-    <!-- ==================== PUNCH IN MODAL ==================== -->
-    <div v-if="showPunchInModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h3 class="font-black text-sm text-white flex items-center gap-2">
-            <i class="bi bi-fingerprint text-emerald-400"></i> Staff Shift Punch In
-          </h3>
-          <button @click="showPunchInModal = false" class="text-slate-500 hover:text-white">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
-
-        <div>
-          <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Select Shift Slot</label>
-          <div class="grid grid-cols-3 gap-2 text-xs font-bold">
-            <button type="button" @click="punchInForm.slot = 'Morning'" class="p-2 rounded-lg border text-center transition"
-              :class="punchInForm.slot === 'Morning' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
-              Morning<br><span class="text-[10px] font-normal opacity-80">06:00-14:00</span>
-            </button>
-            <button type="button" @click="punchInForm.slot = 'General'" class="p-2 rounded-lg border text-center transition"
-              :class="punchInForm.slot === 'General' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
-              General<br><span class="text-[10px] font-normal opacity-80">09:00-18:00</span>
-            </button>
-            <button type="button" @click="punchInForm.slot = 'Night'" class="p-2 rounded-lg border text-center transition"
-              :class="punchInForm.slot === 'Night' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 border-slate-800 text-slate-300'">
-              Night<br><span class="text-[10px] font-normal opacity-80">22:00-06:00</span>
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Selfie / Biometric Verification</label>
-          <div class="border-2 border-dashed border-slate-800 rounded-xl p-3 text-center bg-slate-900">
-            <input type="file" ref="selfieInput" accept="image/*" capture="user" @change="onSelfieSelected" class="hidden">
-            <div v-if="selfiePreview" class="relative">
-              <img :src="selfiePreview" class="w-24 h-24 rounded-full object-cover mx-auto border-2 border-emerald-500">
-              <button @click="selfiePreview = null; punchInForm.selfieFile = null" class="absolute top-0 right-1/4 bg-rose-500 text-white rounded-full p-1 text-xs">
-                <i class="bi bi-x"></i>
-              </button>
-            </div>
-            <div v-else @click="$refs.selfieInput.click()" class="cursor-pointer space-y-1">
-              <i class="bi bi-camera text-2xl text-slate-500"></i>
-              <div class="text-xs font-bold text-slate-300">Tap to Take Selfie Photo</div>
-              <div class="text-[10px] text-slate-500">Stored in MinIO object storage</div>
-            </div>
-          </div>
-        </div>
-
-        <button @click="submitPunchIn" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg">
-          Confirm Punch In (Request Manager Approval)
-        </button>
-      </div>
-    </div>
-
-    <!-- ==================== 4-DIGIT MANAGER DUTY CODE MODAL ==================== -->
-    <div v-if="showDutyCodeModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-amber-500/40 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-center">
-        <div class="w-14 h-14 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mx-auto text-2xl">
-          <i class="bi bi-shield-lock-fill"></i>
-        </div>
-        <div>
-          <h3 class="font-black text-base text-white tracking-wide">Enter 4-Digit Manager Code</h3>
-          <p class="text-xs text-slate-400 mt-1">
-            Floor Manager aapka punch-in approve karke 4-digit code dega. Woh code yahan enter karein taaki duty chalu ho sake.
-          </p>
-        </div>
-
-        <div>
-          <label class="block text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-2">4-Digit Security Code</label>
-          <input v-model="dutyVerificationCode" maxlength="4" type="tel"
-            placeholder="• • • •"
-            class="w-44 mx-auto text-center font-mono text-2xl font-black tracking-[0.5em] bg-slate-900 border-2 border-amber-500/50 rounded-xl py-2.5 text-white focus:outline-none focus:border-amber-400">
-        </div>
-
-        <div v-if="dutyCodeError" class="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs">
-          {{ dutyCodeError }}
-        </div>
-
-        <div class="space-y-2 pt-2">
-          <button @click="submitDutyCodeVerification" :disabled="isVerifyingCode || (dutyVerificationCode || '').length < 4"
-            class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5">
-            <span v-if="isVerifyingCode" class="animate-spin"><i class="bi bi-arrow-repeat"></i></span>
-            <span v-else><i class="bi bi-check-circle-fill"></i> Verify & Chalu Karo Duty</span>
-          </button>
-          <button @click="showDutyCodeModal = false" class="text-xs text-slate-500 hover:text-white py-1">
-            Close (Enter code later)
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ==================== CAMERA SCANNER MODAL ==================== -->
-    <div v-if="showCameraModal" class="fixed inset-0 bg-black/90 z-50 flex flex-col p-4">
-      <div class="flex items-center justify-between pb-2">
-        <h3 class="text-white text-sm font-bold flex items-center gap-2">
-          <i class="bi bi-camera-fill text-amber-400"></i> Scanning Barcode / SKU
-        </h3>
-        <button @click="closeCameraScanner" class="text-white text-lg p-1">
-          <i class="bi bi-x-circle-fill"></i>
-        </button>
-      </div>
-      <div id="reader" class="w-full flex-1 rounded-xl overflow-hidden bg-black border border-slate-800"></div>
-    </div>
-
-    <!-- ==================== RTV GATEPASS MODAL ==================== -->
-    <div v-if="showRtvModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-slate-800 w-full max-w-md rounded-2xl p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h3 class="font-black text-sm text-white flex items-center gap-2">
-            <i class="bi bi-truck text-cyan-400"></i> Generate RTV Gatepass (Return to Vendor)
-          </h3>
-          <button @click="showRtvModal = false" class="text-slate-500 hover:text-white">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
-
-        <div class="space-y-2 text-xs">
-          <div>
-            <label class="block text-[10px] font-bold text-slate-400 uppercase">Vendor Name</label>
-            <input v-model="rtvForm.vendorName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[10px] font-bold text-slate-400 uppercase">Transporter</label>
-              <input v-model="rtvForm.transporterName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
-            </div>
-            <div>
-              <label class="block text-[10px] font-bold text-slate-400 uppercase">Vehicle Number</label>
-              <input v-model="rtvForm.vehicleNumber" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Name</label>
-              <input v-model="rtvForm.driverName" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
-            </div>
-            <div>
-              <label class="block text-[10px] font-bold text-slate-400 uppercase">Driver Mobile</label>
-              <input v-model="rtvForm.driverContact" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white">
-            </div>
-          </div>
-        </div>
-
-        <button @click="submitRtvGatepass" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 rounded-lg text-xs uppercase">
-          Issue Gatepass & Generate Manifest
+    <!-- ========================================================================= -->
+    <!-- FIXED BOTTOM NAVIGATION BAR (Home | Packs | Task | Profile)                -->
+    <!-- ========================================================================= -->
+    <nav class="wms-fixed-bottom-dock">
+      <div class="container d-flex justify-content-around align-items-center" style="max-width: 600px;">
+        <button @click="navigateBottom('home')" class="dock-btn" :class="bottomNav === 'home' ? 'active' : ''">
+          <i class="bi bi-house-door-fill fs-5 mb-0.5"></i>
+          <span>Home</span>
         </button>
 
-        <div v-if="generatedGatepass" class="p-3 rounded-lg bg-slate-900 border border-cyan-800/40 text-xs space-y-1 font-mono">
-          <div class="text-cyan-400 font-bold">Gatepass Issued: {{ generatedGatepass.gatepassNo }}</div>
-          <div class="text-slate-300">Security Seal: {{ generatedGatepass.securityApprovalStamp }}</div>
-          <div class="text-emerald-400 text-[10px]">Ready for vehicle exit at Gate 1</div>
-        </div>
-      </div>
-    </div>
+        <button @click="navigateBottom('packs')" class="dock-btn" :class="bottomNav === 'packs' ? 'active' : ''">
+          <i class="bi bi-box-seam fs-5 mb-0.5"></i>
+          <span>Packs</span>
+        </button>
 
-    <!-- ==================== WORKER PROFILE MODAL (STEP 4) ==================== -->
-    <div v-if="showProfileModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h3 class="font-black text-sm text-white flex items-center gap-2">
-            <i class="bi bi-person-badge-fill text-amber-400"></i> Worker Profile & KPIs
-          </h3>
-          <button @click="showProfileModal = false" class="text-slate-500 hover:text-white">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
+        <button @click="navigateBottom('tasks')" class="dock-btn" :class="bottomNav === 'tasks' ? 'active' : ''">
+          <i class="bi bi-card-checklist fs-5 mb-0.5"></i>
+          <span>Task</span>
+        </button>
 
-        <!-- Worker Identity Card -->
-        <div class="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
-          <div class="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-black text-xl">
-            {{ user.name ? user.name.charAt(0).toUpperCase() : 'W' }}
-          </div>
-          <div>
-            <h4 class="font-black text-white text-sm">{{ user.name }}</h4>
-            <div class="text-[11px] text-slate-400 font-mono">{{ user.mobile || '9985699757' }}</div>
-            <span class="text-[9px] px-2 py-0.5 rounded font-black uppercase mt-1 inline-block" :class="getRoleBadgeClass(user.role)">
-              {{ user.role }} • Staff #{{ user.staffId || '101' }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Live KPI Scorecard -->
-        <div class="grid grid-cols-3 gap-2 text-center">
-          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-400 block">Today Picked</span>
-            <strong class="text-amber-400 font-mono text-sm font-black">{{ walletData.todayBreakdown?.completedPicksCount || 18 }}</strong>
-          </div>
-          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-400 block">Avg Speed</span>
-            <strong class="text-cyan-400 font-mono text-sm font-black">72s</strong>
-          </div>
-          <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
-            <span class="text-[10px] text-slate-400 block">Accuracy</span>
-            <strong class="text-emerald-400 font-mono text-sm font-black">{{ walletData.todayBreakdown?.accuracyRate || '99.4%' }}</strong>
-          </div>
-        </div>
-
-        <!-- Bank & UPI Account -->
-        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1">
-          <div class="text-[10px] font-black text-slate-400 uppercase">Settlement Bank & UPI</div>
-          <div class="font-bold text-white">{{ walletData.bankAccount?.bankName || 'HDFC Bank' }} ({{ walletData.bankAccount?.accountNo || '••••4491' }})</div>
-          <div class="text-[11px] text-emerald-400 font-mono">UPI: {{ walletData.bankAccount?.upi || '9985699757@paytm' }}</div>
-        </div>
-
-        <button @click="showProfileModal = false" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-lg text-xs">
-          Close Profile
+        <button @click="navigateBottom('profile')" class="dock-btn" :class="bottomNav === 'profile' ? 'active' : ''">
+          <i class="bi bi-person-fill fs-5 mb-0.5"></i>
+          <span>Profile</span>
         </button>
       </div>
-    </div>
+    </nav>
 
-    <!-- ==================== SALARY & RATES NOTICE MODAL (STEP 2) ==================== -->
-    <div v-if="showSalaryNoticeModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-3.5 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h3 class="font-black text-sm text-white flex items-center gap-2">
-            <i class="bi bi-cash-stack text-emerald-400"></i> Dark Store Wage Policy
-          </h3>
-          <button @click="showSalaryNoticeModal = false" class="text-slate-500 hover:text-white">
-            <i class="bi bi-x-lg"></i>
-          </button>
+    <!-- Real-Time Socket Toast Popup -->
+    <div v-if="toastMessage" class="toast-container position-fixed top-0 end-0 p-3 z-3">
+      <div class="toast show align-items-center text-white border-0 shadow-lg rounded-4"
+           :class="toastType === 'error' ? 'bg-danger' : 'bg-success'" role="alert">
+        <div class="d-flex">
+          <div class="toast-body d-flex align-items-center gap-2 fw-bold">
+            <i :class="toastType === 'error' ? 'bi bi-x-circle-fill fs-5' : 'bi bi-check-circle-fill fs-5'"></i>
+            <span>{{ toastMessage }}</span>
+          </div>
+          <button @click="toastMessage = null" type="button" class="btn-close btn-close-white me-2 m-auto"></button>
         </div>
-
-        <div class="space-y-2 text-xs">
-          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <div>
-              <div class="font-bold text-white">Daily Base Shift Pay</div>
-              <div class="text-[10px] text-slate-400">8-hour shift with duty approval</div>
-            </div>
-            <span class="text-emerald-400 font-mono font-black text-sm">₹600 / Day</span>
-          </div>
-
-          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <div>
-              <div class="font-bold text-white">Order Picking Incentive</div>
-              <div class="text-[10px] text-slate-400">Per order picked within 60-90s</div>
-            </div>
-            <span class="text-amber-400 font-mono font-black text-sm">+₹15 / Pick</span>
-          </div>
-
-          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <div>
-              <div class="font-bold text-white">Put-away Placement Bonus</div>
-              <div class="text-[10px] text-slate-400">Bin-verified putaway tasks</div>
-            </div>
-            <span class="text-cyan-400 font-mono font-black text-sm">+₹10 / Task</span>
-          </div>
-
-          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <div>
-              <div class="font-bold text-white">100% Accuracy Bonus</div>
-              <div class="text-[10px] text-slate-400">Zero picking errors in shift</div>
-            </div>
-            <span class="text-purple-400 font-mono font-black text-sm">+₹100 / Shift</span>
-          </div>
-
-          <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <div>
-              <div class="font-bold text-rose-400">Damage / Shortage Penalty</div>
-              <div class="text-[10px] text-slate-400">Unreported damaged stock</div>
-            </div>
-            <span class="text-rose-400 font-mono font-black text-sm">-₹50 / item</span>
-          </div>
-        </div>
-
-        <button @click="showSalaryNoticeModal = false" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2 rounded-lg text-xs uppercase">
-          Understood & Acknowledged
-        </button>
       </div>
-    </div>
-
-    <!-- ==================== PICKER HANDOVER SLIP MODAL (STEP 5) ==================== -->
-    <div v-if="completedPickHandover" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div class="bg-slate-950 border border-amber-500/50 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-center">
-        <div class="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-3xl">
-          <i class="bi bi-check-circle-fill"></i>
-        </div>
-
-        <div>
-          <span class="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black uppercase">
-            HANDOVER TO PACKER BAY
-          </span>
-          <h3 class="font-black text-lg text-white mt-1">Order #{{ completedPickHandover.orderId }} Picked!</h3>
-          <p class="text-xs text-slate-400">Deliver tote bag to Packer Bay for verification & bagging</p>
-        </div>
-
-        <!-- Handover Bay Destination Card -->
-        <div class="p-3 bg-slate-900 border-2 border-dashed border-amber-500/40 rounded-xl space-y-2">
-          <div class="text-slate-400 text-xs font-bold uppercase">Destination Staging Bay</div>
-          <div class="text-3xl font-black text-amber-400 font-mono tracking-wider">
-            {{ completedPickHandover.handoverBay }}
-          </div>
-          <div class="text-[11px] font-mono text-slate-300">
-            Handover Code: <strong class="text-white">{{ completedPickHandover.handoverCode }}</strong>
-          </div>
-          <div class="text-[10px] text-slate-500">Total Items in Crate: {{ completedPickHandover.totalItems }}</div>
-        </div>
-
-        <button @click="completedPickHandover = null"
-          class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20">
-          Handover Complete (Auto-Assign Next Order)
-        </button>
-      </div>
-    </div>
-
-    <!-- Toast Notification Banner -->
-    <div v-if="toastMessage" class="fixed bottom-3 left-4 right-4 max-w-sm mx-auto z-50 p-3 rounded-xl shadow-2xl text-xs font-bold flex items-center justify-between border"
-      :class="toastType === 'error' ? 'bg-rose-950 border-rose-700 text-rose-200' : 'bg-emerald-950 border-emerald-700 text-emerald-200'">
-      <div class="flex items-center gap-2">
-        <i :class="toastType === 'error' ? 'bi bi-x-circle-fill text-rose-400' : 'bi bi-check-circle-fill text-emerald-400'"></i>
-        <span>{{ toastMessage }}</span>
-      </div>
-      <button @click="toastMessage = null" class="text-slate-400 hover:text-white">
-        <i class="bi bi-x"></i>
-      </button>
     </div>
 
   </div>
 
   <script src="/js/api.js"></script>
   <script src="/js/app.js"></script>
+  <!-- Bootstrap 5 Bundle JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
