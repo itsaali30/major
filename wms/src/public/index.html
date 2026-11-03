@@ -21,33 +21,9 @@
 
   <div id="app" v-cloak class="min-h-screen d-flex flex-column">
 
-    <!-- Top Workflow & Real-Time Sync Bar -->
+    <!-- Top Real-Time Sync Bar -->
     <header class="bg-dark text-white border-bottom border-secondary border-opacity-25 py-2 sticky-top z-3 shadow-sm" style="background-color: #170d2c !important;">
-      <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <!-- 4 Steps Workflow Pills -->
-        <div class="d-flex align-items-center gap-1 overflow-x-auto py-1 text-nowrap scrollbar-none">
-          <button @click="navigateToStep('step1')"
-            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
-            :class="activeWorkflowStep === 'step1' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
-            1. Auth
-          </button>
-          <button @click="navigateToStep('step2')"
-            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
-            :class="activeWorkflowStep === 'step2' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
-            2. Salary & Approvals
-          </button>
-          <button @click="navigateToStep('step3')"
-            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
-            :class="activeWorkflowStep === 'step3' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
-            3. Slots & History
-          </button>
-          <button @click="navigateToStep('step4')"
-            class="btn btn-sm rounded-pill fw-bold px-3 py-1"
-            :class="activeWorkflowStep === 'step4' || activeWorkflowStep === 'active_task' ? 'btn-success text-dark font-black' : 'btn-outline-light border-0 text-white-50'">
-            4. Task Dashboard
-          </button>
-        </div>
-
+      <div class="container d-flex justify-content-end align-items-center">
         <!-- Real-Time Socket Connection Badge -->
         <div class="d-flex align-items-center gap-2">
           <span class="badge rounded-pill bg-dark border border-secondary border-opacity-50 font-monospace d-inline-flex align-items-center gap-1.5 py-1 px-2.5"
@@ -180,39 +156,6 @@
                   </button>
                 </form>
               </div>
-
-              <!-- Quick Role Demo Switcher -->
-              <div class="mt-4 pt-3 border-top border-secondary border-opacity-25 text-center">
-                <small class="text-white-50 text-uppercase fw-bold d-block mb-2">Quick Switch Staff Role (Demo / Testing)</small>
-                <div class="row g-2">
-                  <div class="col-6">
-                    <button type="button" @click="quickLogin('picker')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
-                      <span class="badge bg-warning text-dark me-1">1</span> Picker
-                    </button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" @click="quickLogin('putter')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
-                      <span class="badge bg-info text-dark me-1">2</span> Put-away
-                    </button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" @click="quickLogin('inward')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
-                      <span class="badge bg-success text-white me-1">3</span> Inward
-                    </button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" @click="quickLogin('packer')" class="btn btn-light w-100 btn-sm text-start fw-bold shadow-sm border">
-                      <span class="badge bg-primary text-white me-1">4</span> Packer
-                    </button>
-                  </div>
-                  <div class="col-12">
-                    <button type="button" @click="quickLogin('manager')" class="btn btn-dark w-100 btn-sm text-center fw-bold shadow-sm border text-danger">
-                      <i class="bi bi-shield-lock-fill me-1"></i> 5. Warehouse Floor Lead / Manager
-                    </button>
-                  </div>
-                </div>
-              </div>
-
             </div>
           </div>
         </section>
