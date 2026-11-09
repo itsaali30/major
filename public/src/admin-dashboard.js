@@ -94,6 +94,13 @@ const AdminDashboard = {
                     <p class="text-muted">Picker vs Manager separate payout ledger</p>
                   </router-link>
                 </div>
+                <div class="col-md-6 mb-4" v-if="$root.isSuperadmin || $root.isAdmin || $root.isManager || $root.isIncharge">
+                  <router-link to="/admin/putway-task" class="card admin-dashboard-btn btn btn-outline-info text-decoration-none border-info">
+                    <i class="bi bi-box-arrow-in-down text-info"></i>
+                    <h5>Putaway Tasks</h5>
+                    <p class="text-muted">Floor-to-shelf movements log (Row-wise details)</p>
+                  </router-link>
+                </div>
               </div>
             </div>
           </div>

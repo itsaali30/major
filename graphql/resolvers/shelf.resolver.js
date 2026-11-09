@@ -1,29 +1,55 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+function toIsoSafe(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString();
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? String(val) : d.toISOString();
+  } catch (e) {
+    return null;
+  }
+}
+
 async function buildShelfAudit(shelf) {
   if (!shelf) return null;
 
-  const store = await prisma.stores.findUnique({
-    where: { StoreID: shelf.StoreID },
-    include: { Warehouse: true }
-  });
+  let store = null;
+  try {
+    store = await prisma.stores.findUnique({
+      where: { StoreID: shelf.StoreID },
+      include: { Warehouse: true }
+    });
+  } catch (e) {
+    console.warn("Error fetching store for shelf audit:", e.message);
+  }
 
   // 1. Current stock items on this shelf
-  const stocks = await prisma.stocks.findMany({
-    where: {
-      StoreID: shelf.StoreID,
-      ShelfID: shelf.ShelfID,
-      OnHandQty: { gt: 0 }
-    }
-  });
+  let stocks = [];
+  try {
+    stocks = await prisma.stocks.findMany({
+      where: {
+        StoreID: shelf.StoreID,
+        ShelfID: shelf.ShelfID,
+        OnHandQty: { gt: 0 }
+      }
+    });
+  } catch (e) {
+    console.warn("Error fetching stocks for shelf audit:", e.message);
+  }
 
   let totalUnits = 0;
   const items = [];
   for (const s of stocks) {
     totalUnits += (s.OnHandQty || 0);
-    const v = await prisma.variants.findUnique({ where: { VariantID: s.VariantID } });
-    const prod = v ? await prisma.products.findUnique({ where: { ProductID: v.ProductID } }) : null;
+    let v = null;
+    let prod = null;
+    try {
+      v = await prisma.variants.findUnique({ where: { VariantID: s.VariantID } });
+      prod = v ? await prisma.products.findUnique({ where: { ProductID: v.ProductID } }) : null;
+    } catch (e) {}
+
     items.push({
       VariantID: s.VariantID,
       ProductID: v ? v.ProductID : null,
@@ -39,91 +65,116 @@ async function buildShelfAudit(shelf) {
   }
 
   // 2. Receiving records (GRNs) for this shelf/store
-  const grns = await prisma.gRNs.findMany({
-    where: {
-      StoreID: shelf.StoreID,
-      OR: [
-        { ShelfID: shelf.ShelfID },
-        { ShelfID: null }
-      ]
-    },
-    include: { Items: true },
-    orderBy: { CreatedAt: 'desc' },
-    take: 50
-  });
-
   const receivings = [];
-  for (const g of grns) {
-    const merchant = await prisma.merchants.findUnique({ where: { MerchantID: g.MerchantID } });
-    const merchantName = merchant ? merchant.Name : 'Vendor';
-    for (const it of (g.Items || [])) {
-      const v = await prisma.variants.findUnique({ where: { VariantID: it.VariantID } });
-      receivings.push({
-        GRNID: g.GRNID,
-        GRNNumber: g.GRNNumber || `GRN-${g.GRNID}`,
-        Type: g.Type || 'PO',
-        VariantID: it.VariantID,
-        VariantName: it.VariantName,
-        SKU: v ? v.SKU : '',
-        Qty: it.Qty,
-        Cost: it.Cost,
-        ReceivedByID: g.ReceivedByID,
-        ReceivedByName: g.ReceivedByName || 'Officer',
-        ReceivedAt: g.ReceivedAt ? g.ReceivedAt.toISOString() : (g.CreatedAt ? g.CreatedAt.toISOString() : null),
-        MerchantName: merchantName,
-        Remarks: g.Remarks
-      });
+  try {
+    const grns = await prisma.gRNs.findMany({
+      where: {
+        StoreID: shelf.StoreID,
+        OR: [
+          { ShelfID: shelf.ShelfID },
+          { ShelfID: null }
+        ]
+      },
+      include: { Items: true },
+      orderBy: { CreatedAt: 'desc' },
+      take: 50
+    });
+
+    for (const g of (grns || [])) {
+      let merchantName = 'Vendor';
+      try {
+        if (g.MerchantID) {
+          const merchant = await prisma.merchants.findUnique({ where: { MerchantID: g.MerchantID } });
+          if (merchant) merchantName = merchant.Name;
+        }
+      } catch (e) {}
+
+      for (const it of (g.Items || [])) {
+        let v = null;
+        try {
+          v = await prisma.variants.findUnique({ where: { VariantID: it.VariantID } });
+        } catch (e) {}
+
+        receivings.push({
+          GRNID: g.GRNID,
+          GRNNumber: g.GRNNumber || `GRN-${g.GRNID}`,
+          Type: g.Type || 'PO',
+          VariantID: it.VariantID,
+          VariantName: it.VariantName,
+          SKU: v ? v.SKU : '',
+          Qty: it.Qty,
+          Cost: it.Cost,
+          ReceivedByID: g.ReceivedByID,
+          ReceivedByName: g.ReceivedByName || 'Officer',
+          ReceivedAt: toIsoSafe(g.ReceivedAt) || toIsoSafe(g.CreatedAt),
+          MerchantName: merchantName,
+          Remarks: g.Remarks
+        });
+      }
     }
+  } catch (e) {
+    console.warn("GRNs query skipped or failed:", e.message);
   }
 
   // 3. Movement / Transfer records for this shelf
-  const shelfCode = shelf.ShelfCode || 'FL01';
-  const movements = await prisma.stockMovements.findMany({
-    where: {
-      OR: [
-        { ToShelf: shelfCode, ToStoreID: shelf.StoreID },
-        { FromShelf: shelfCode, FromStoreID: shelf.StoreID },
-        { ToShelf: shelfCode },
-        { FromShelf: shelfCode }
-      ]
-    },
-    orderBy: { Date: 'desc' },
-    take: 50
-  });
-
   const movementRecords = [];
-  for (const m of movements) {
-    const v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
-    const prod = v ? await prisma.products.findUnique({ where: { ProductID: v.ProductID } }) : null;
-    const fromStore = m.FromStoreID ? await prisma.stores.findUnique({ where: { StoreID: m.FromStoreID } }) : null;
-    const toStore = m.ToStoreID ? await prisma.stores.findUnique({ where: { StoreID: m.ToStoreID } }) : null;
-
-    let fromName = fromStore ? fromStore.StoreName : (m.FromShelf === 'VENDOR' || m.FromShelf === 'VENDOR_DIRECT' ? 'Vendor / Inward Supply' : 'External');
-    let toName = toStore ? toStore.StoreName : (m.ToShelf === 'VENDOR_RETURN' ? 'Vendor Return' : 'External');
-
-    movementRecords.push({
-      MovementID: m.MovementID,
-      VariantID: m.VariantID,
-      VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})`.trim() : (v ? v.SKU : 'Item'),
-      SKU: v ? v.SKU : '',
-      FromStoreID: m.FromStoreID,
-      FromStoreName: fromName,
-      ToStoreID: m.ToStoreID,
-      ToStoreName: toName,
-      FromShelf: m.FromShelf || 'N/A',
-      ToShelf: m.ToShelf || 'N/A',
-      Qty: m.Qty || 0,
-      Type: m.Type || 'TRANSFER',
-      Date: m.Date ? m.Date.toISOString() : null,
-      CreatedBy: m.CreatedBy,
-      CreatedByName: m.CreatedByName || (m.CreatedBy ? `Staff #${m.CreatedBy}` : 'Officer')
+  try {
+    const shelfCode = shelf.ShelfCode || 'FL01';
+    const movements = await prisma.stockMovements.findMany({
+      where: {
+        OR: [
+          { ToShelf: shelfCode, ToStoreID: shelf.StoreID },
+          { FromShelf: shelfCode, FromStoreID: shelf.StoreID },
+          { ToShelf: shelfCode },
+          { FromShelf: shelfCode }
+        ]
+      },
+      orderBy: { Date: 'desc' },
+      take: 50
     });
+
+    for (const m of (movements || [])) {
+      let v = null;
+      let prod = null;
+      let fromStore = null;
+      let toStore = null;
+
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
+        if (v) prod = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+        if (m.FromStoreID) fromStore = await prisma.stores.findUnique({ where: { StoreID: m.FromStoreID } });
+        if (m.ToStoreID) toStore = await prisma.stores.findUnique({ where: { StoreID: m.ToStoreID } });
+      } catch (e) {}
+
+      let fromName = fromStore ? fromStore.StoreName : (m.FromShelf === 'VENDOR' || m.FromShelf === 'VENDOR_DIRECT' ? 'Vendor / Inward Supply' : 'External');
+      let toName = toStore ? toStore.StoreName : (m.ToShelf === 'VENDOR_RETURN' ? 'Vendor Return' : 'External');
+
+      movementRecords.push({
+        MovementID: m.MovementID,
+        VariantID: m.VariantID,
+        VariantName: prod ? `${prod.ProductName} (${v.Size || ''} ${v.Color || ''})`.trim() : (v ? v.SKU : 'Item'),
+        SKU: v ? v.SKU : '',
+        FromStoreID: m.FromStoreID,
+        FromStoreName: fromName,
+        ToStoreID: m.ToStoreID,
+        ToStoreName: toName,
+        FromShelf: m.FromShelf || 'N/A',
+        ToShelf: m.ToShelf || 'N/A',
+        Qty: m.Qty || 0,
+        Type: m.Type || 'TRANSFER',
+        Date: toIsoSafe(m.Date),
+        CreatedBy: m.CreatedBy,
+        CreatedByName: m.CreatedByName || (m.CreatedBy ? `Staff #${m.CreatedBy}` : 'Officer')
+      });
+    }
+  } catch (e) {
+    console.warn("StockMovements query skipped or failed:", e.message);
   }
 
   return {
     ShelfID: shelf.ShelfID,
-    ShelfCode: shelf.ShelfCode,
-    StoreID: shelf.StoreID,
+    ShelfCode: shelf.ShelfCode || 'FL01',
+    StoreID: shelf.StoreID || (store ? store.StoreID : 0),
     StoreName: store ? store.StoreName : 'Store',
     StoreType: store ? store.Type : 'Standard',
     WarehouseID: store ? store.WarehouseID : null,

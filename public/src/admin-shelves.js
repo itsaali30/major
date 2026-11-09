@@ -435,6 +435,7 @@ const AdminShelves = {
       }
     },
     async openShelfAuditModal(s) {
+      if (!s || !s.ShelfID) return;
       const token = localStorage.getItem('token');
       const query = `
         query GetShelfAudit($id: Int!) {
@@ -447,14 +448,57 @@ const AdminShelves = {
         }
       `;
       try {
-        const res = await graphqlRequest(query, { id: s.ShelfID }, token);
-        this.selectedShelfAudit = res.shelfAuditDetails;
+        const res = await graphqlRequest(query, { id: parseInt(s.ShelfID) }, token);
+        if (res && res.shelfAuditDetails) {
+          this.selectedShelfAudit = res.shelfAuditDetails;
+        } else {
+          this.selectedShelfAudit = {
+            ShelfID: s.ShelfID,
+            ShelfCode: s.ShelfCode,
+            StoreID: s.StoreID,
+            StoreName: this.store ? this.store.StoreName : 'Store',
+            StoreType: this.store ? this.store.Type : 'Standard',
+            WarehouseID: this.store ? this.store.WarehouseID : null,
+            WarehouseName: this.store && this.store.Warehouse ? this.store.Warehouse.Name : 'Warehouse',
+            TotalItemsCount: s.TotalItemsCount || 0,
+            TotalUnits: s.TotalUnits || 0,
+            Items: [],
+            Receivings: [],
+            Movements: []
+          };
+        }
         this.auditTab = 'items';
+        if (!this.shelfAuditModalInstance && typeof bootstrap !== 'undefined') {
+          const el = this.$refs.shelfAuditModal || document.getElementById('shelfAuditModal');
+          if (el) this.shelfAuditModalInstance = new bootstrap.Modal(el);
+        }
         if (this.shelfAuditModalInstance) {
           this.shelfAuditModalInstance.show();
         }
       } catch (err) {
-        alert("Error loading shelf audit details: " + err.message);
+        console.warn("Failed to load full audit via GraphQL, falling back to basic details:", err);
+        this.selectedShelfAudit = {
+          ShelfID: s.ShelfID,
+          ShelfCode: s.ShelfCode,
+          StoreID: s.StoreID,
+          StoreName: this.store ? this.store.StoreName : 'Store',
+          StoreType: this.store ? this.store.Type : 'Standard',
+          WarehouseID: this.store ? this.store.WarehouseID : null,
+          WarehouseName: this.store && this.store.Warehouse ? this.store.Warehouse.Name : 'Warehouse',
+          TotalItemsCount: s.TotalItemsCount || 0,
+          TotalUnits: s.TotalUnits || 0,
+          Items: [],
+          Receivings: [],
+          Movements: []
+        };
+        this.auditTab = 'items';
+        if (!this.shelfAuditModalInstance && typeof bootstrap !== 'undefined') {
+          const el = this.$refs.shelfAuditModal || document.getElementById('shelfAuditModal');
+          if (el) this.shelfAuditModalInstance = new bootstrap.Modal(el);
+        }
+        if (this.shelfAuditModalInstance) {
+          this.shelfAuditModalInstance.show();
+        }
       }
     },
     closeShelfAuditModal() {

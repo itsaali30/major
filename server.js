@@ -201,7 +201,7 @@ app.get('/api/admin/duty-records', async (req, res) => {
       records.map(async (rec) => {
         const user = await prisma.users.findUnique({
           where: { UserID: rec.UserID },
-          select: { UserID: true, UserNameFirst: true, UserNameLast: true, Mobile: true, Email: true, Role: true, ProfileImageUrl: true }
+          select: { UserID: true, UserNameFirst: true, UserNameLast: true, Mobile: true, Email: true, Role: true, ProfileImageUrl: true, IsActive: true }
         });
 
         let approver = null;
@@ -220,6 +220,7 @@ app.get('/api/admin/duty-records', async (req, res) => {
           employeeMobile: user?.Mobile || 'N/A',
           employeeRole: user?.Role || 'staff',
           profileImage: user?.ProfileImageUrl || null,
+          isActive: user?.IsActive ?? true,
           shiftSlot: rec.ShiftSlot || 'General',
           date: rec.Date,
           punchInTime: rec.PunchInTime,
@@ -256,7 +257,6 @@ app.get('/api/admin/duty-records', async (req, res) => {
         emp.totalShifts += 1;
         emp.history.push({ ...rec });
 
-        // If the newer/alternative record has a higher priority status, promote it as current duty summary
         const currentPrio = statusPriority[emp.approvalStatus] ?? -1;
         const newPrio = statusPriority[rec.approvalStatus] ?? -1;
         if (newPrio > currentPrio) {
@@ -272,6 +272,43 @@ app.get('/api/admin/duty-records', async (req, res) => {
           emp.date = rec.date;
           emp.notes = rec.notes;
           if (rec.selfieUrl) emp.selfieUrl = rec.selfieUrl;
+        }
+      }
+    }
+
+    // Also include registered staff from Users who don't have duty records yet
+    const allStaffUsers = await prisma.users.findMany({
+      where: {
+        Role: { in: ['picker', 'putter', 'inward', 'packer', 'manager', 'supervisor', 'incharge', 'superadmin', 'admin'] }
+      }
+    });
+
+    for (const u of allStaffUsers) {
+      if (!employeeMap.has(u.UserID)) {
+        if (!role || role === 'all' || u.Role.toLowerCase() === role.toLowerCase()) {
+          employeeMap.set(u.UserID, {
+            dutyId: null,
+            userId: u.UserID,
+            staffId: u.UserID,
+            employeeName: `${u.UserNameFirst} ${u.UserNameLast || ''}`.trim() || u.Email,
+            employeeMobile: u.Mobile || 'N/A',
+            employeeRole: u.Role,
+            profileImage: u.ProfileImageUrl || null,
+            isActive: u.IsActive ?? true,
+            shiftSlot: 'General Slot',
+            date: new Date(),
+            punchInTime: null,
+            punchOutTime: null,
+            selfieUrl: null,
+            approvalStatus: 'OFF_DUTY',
+            approvalCode: null,
+            approvedByName: null,
+            approvedAt: null,
+            totalHours: 0,
+            notes: 'Awaiting Punch-In',
+            totalShifts: 0,
+            history: []
+          });
         }
       }
     }
@@ -522,6 +559,341 @@ app.post('/api/admin/duty-force-logout', async (req, res) => {
   }
 });
 
+// Unified Manager 3-Dot Actions: checkout, forcecheckin, id-terminate, id-disable, id-active
+app.post('/api/admin/duty-action', async (req, res) => {
+  try {
+    const { action, userId, dutyId, reason } = req.body;
+    if (!action || !userId) {
+      return res.status(400).json({ success: false, message: 'Action and User ID are required.' });
+    }
+
+    const uId = parseInt(userId);
+    const user = await prisma.users.findUnique({ where: { UserID: uId } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString();
+
+    if (action === 'checkout') {
+      const activeDuty = await prisma.dutyRecords.findFirst({
+        where: { UserID: uId, ApprovalStatus: { in: ['ACTIVE', 'APPROVED', 'PENDING_APPROVAL'] } },
+        orderBy: { DutyID: 'desc' }
+      });
+
+      if (activeDuty) {
+        const hours = Math.max(0.2, parseFloat(((now.getTime() - new Date(activeDuty.CreatedAt).getTime()) / (1000 * 60 * 60)).toFixed(1)));
+        await prisma.dutyRecords.update({
+          where: { DutyID: activeDuty.DutyID },
+          data: {
+            ApprovalStatus: 'COMPLETED',
+            PunchOutTime: timeStr,
+            TotalHours: hours,
+            Notes: `Checked out by Admin at ${timeStr}`
+          }
+        });
+      }
+
+      await prisma.users.update({ where: { UserID: uId }, data: { IsOnline: false } });
+      return res.json({ success: true, message: `Staff #${uId} (${user.UserNameFirst}) checked out successfully.` });
+    }
+
+    if (action === 'forcecheckin') {
+      let staff = await prisma.staff.findFirst({ where: { UserID: uId } });
+      if (!staff) {
+        staff = await prisma.staff.create({ data: { UserID: uId, StoreID: 6, RoleID: 1, Status: 'ACTIVE' } });
+      }
+
+      let activeDuty = await prisma.dutyRecords.findFirst({
+        where: { UserID: uId, ApprovalStatus: { in: ['PENDING_APPROVAL', 'APPROVED'] } },
+        orderBy: { DutyID: 'desc' }
+      });
+
+      if (activeDuty) {
+        await prisma.dutyRecords.update({
+          where: { DutyID: activeDuty.DutyID },
+          data: {
+            ApprovalStatus: 'ACTIVE',
+            PunchInTime: activeDuty.PunchInTime || timeStr,
+            Notes: `Force Check-in Approved by Admin at ${timeStr}`
+          }
+        });
+      } else {
+        await prisma.dutyRecords.create({
+          data: {
+            StaffID: staff.StaffID,
+            UserID: uId,
+            ShiftSlot: 'General Slot',
+            Date: now,
+            PunchInTime: timeStr,
+            ApprovalStatus: 'ACTIVE',
+            ApprovalCode: String(Math.floor(1000 + Math.random() * 9000)),
+            Notes: `Force Check-in Created by Admin at ${timeStr}`
+          }
+        });
+      }
+
+      await prisma.users.update({ where: { UserID: uId }, data: { IsOnline: true } });
+      return res.json({ success: true, message: `Staff #${uId} (${user.UserNameFirst}) force checked-in to active duty!` });
+    }
+
+    if (action === 'id-terminate') {
+      await prisma.dutyRecords.updateMany({
+        where: { UserID: uId, ApprovalStatus: { in: ['ACTIVE', 'APPROVED', 'PENDING_APPROVAL'] } },
+        data: {
+          ApprovalStatus: 'REJECTED',
+          Notes: `Duty terminated by Manager/Admin at ${timeStr}. Reason: ${reason || 'Administrative Action'}`
+        }
+      });
+      await prisma.users.update({ where: { UserID: uId }, data: { IsOnline: false } });
+      return res.json({ success: true, message: `Staff #${uId} (${user.UserNameFirst}) duty terminated.` });
+    }
+
+    if (action === 'id-disable') {
+      await prisma.users.update({ where: { UserID: uId }, data: { IsActive: false, IsOnline: false } });
+      await prisma.dutyRecords.updateMany({
+        where: { UserID: uId, ApprovalStatus: { in: ['ACTIVE', 'APPROVED', 'PENDING_APPROVAL'] } },
+        data: { ApprovalStatus: 'COMPLETED', PunchOutTime: timeStr }
+      });
+      return res.json({ success: true, message: `User ID #${uId} (${user.UserNameFirst}) account disabled.` });
+    }
+
+    if (action === 'id-active') {
+      await prisma.users.update({ where: { UserID: uId }, data: { IsActive: true } });
+      return res.json({ success: true, message: `User ID #${uId} (${user.UserNameFirst}) account activated.` });
+    }
+
+    return res.status(400).json({ success: false, message: `Unknown action '${action}'` });
+  } catch (err) {
+    console.error('Duty action error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Detailed Staff Activity & Duty Session Breakdown (/admin/duty-records/:id/details)
+app.get('/api/admin/duty-records/:id/details', async (req, res) => {
+  try {
+    const rawId = parseInt(req.params.id);
+    if (isNaN(rawId)) {
+      return res.status(400).json({ success: false, message: 'Invalid ID' });
+    }
+
+    let duty = await prisma.dutyRecords.findUnique({ where: { DutyID: rawId } });
+    let targetUserId = duty ? duty.UserID : rawId;
+
+    if (!duty) {
+      duty = await prisma.dutyRecords.findFirst({
+        where: { UserID: targetUserId },
+        orderBy: { DutyID: 'desc' }
+      });
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { UserID: targetUserId },
+      select: { UserID: true, UserNameFirst: true, UserNameLast: true, Mobile: true, Email: true, Role: true, ProfileImageUrl: true, IsActive: true, IsOnline: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Employee user not found.' });
+    }
+
+    const now = new Date();
+    let dutyDurationText = 'Not Started';
+    let dutyStartTime = duty?.PunchInTime || null;
+    if (duty && duty.PunchInTime) {
+      const startTime = duty.CreatedAt ? new Date(duty.CreatedAt) : now;
+      const diffMs = Math.max(0, now.getTime() - startTime.getTime());
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      dutyDurationText = `${diffHours} hr ${diffMins} min (Since ${duty.PunchInTime})`;
+    }
+
+    // 1. Putaway Movements
+    const putawayMovements = await prisma.stockMovements.findMany({
+      where: {
+        CreatedBy: targetUserId,
+        OR: [
+          { Type: 'PUTAWAY' },
+          { Type: { contains: 'PUT', mode: 'insensitive' } }
+        ]
+      },
+      orderBy: { Date: 'desc' },
+      take: 100
+    });
+
+    const placedItems = [];
+    let totalPlacedQty = 0;
+    for (const m of putawayMovements) {
+      totalPlacedQty += (m.Qty || 0);
+      let v = null;
+      let p = null;
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
+        if (v) p = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+      } catch (e) {}
+
+      placedItems.push({
+        movementId: m.MovementID,
+        variantId: m.VariantID,
+        productName: p ? p.ProductName : (v ? v.SKU : `Item #${m.VariantID}`),
+        sku: v ? v.SKU : '',
+        unit: v ? v.Unit : 'PCS',
+        outShelf: m.FromShelf || 'FL01',
+        inShelf: m.ToShelf || 'N/A',
+        qty: m.Qty || 0,
+        time: m.Date,
+        status: m.Status || 'COMPLETED'
+      });
+    }
+
+    // Floor items remaining
+    const floorStores = await prisma.stores.findMany({
+      where: {
+        OR: [
+          { Type: { equals: 'Floor', mode: 'insensitive' } },
+          { StoreName: { contains: 'Floor', mode: 'insensitive' } }
+        ]
+      }
+    });
+    const floorStoreIds = floorStores.map(s => s.StoreID);
+    const floorStocks = await prisma.stocks.findMany({
+      where: { StoreID: { in: floorStoreIds }, OnHandQty: { gt: 0 } }
+    });
+
+    const pendingFloorItems = [];
+    let totalPendingFloorQty = 0;
+    for (const fs of floorStocks) {
+      totalPendingFloorQty += (fs.OnHandQty || 0);
+      let v = null;
+      let p = null;
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: fs.VariantID } });
+        if (v) p = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+      } catch (e) {}
+
+      pendingFloorItems.push({
+        variantId: fs.VariantID,
+        productName: p ? p.ProductName : (v ? v.SKU : `Item #${fs.VariantID}`),
+        sku: v ? v.SKU : '',
+        unit: v ? v.Unit : 'PCS',
+        floorQty: fs.OnHandQty || 0,
+        shelfCode: 'FL01'
+      });
+    }
+
+    // 2. Picking Details
+    const pickMovements = await prisma.stockMovements.findMany({
+      where: {
+        CreatedBy: targetUserId,
+        OR: [
+          { Type: 'PICK' },
+          { Type: { contains: 'PICK', mode: 'insensitive' } }
+        ]
+      },
+      orderBy: { Date: 'desc' },
+      take: 100
+    });
+
+    const pickedItems = [];
+    let totalPickedQty = 0;
+    for (const m of pickMovements) {
+      totalPickedQty += (m.Qty || 0);
+      let v = null;
+      let p = null;
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
+        if (v) p = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+      } catch (e) {}
+
+      pickedItems.push({
+        movementId: m.MovementID,
+        variantId: m.VariantID,
+        productName: p ? p.ProductName : (v ? v.SKU : `Item #${m.VariantID}`),
+        sku: v ? v.SKU : '',
+        fromShelf: m.FromShelf,
+        toShelf: m.ToShelf || 'PACKING-BAY',
+        qty: m.Qty || 0,
+        time: m.Date,
+        status: m.Status || 'PICKED'
+      });
+    }
+
+    const returnCount = await prisma.stockMovements.count({
+      where: { CreatedBy: targetUserId, Type: { contains: 'RETURN', mode: 'insensitive' } }
+    });
+    const transferCount = await prisma.stockMovements.count({
+      where: { CreatedBy: targetUserId, Type: { contains: 'TRANSFER', mode: 'insensitive' } }
+    });
+
+    let putawayProcessingStatus = placedItems.length > 0 ? 'Active Putaway On Floor' : 'Standby / Idle';
+    let pickingProcessingStatus = pickedItems.length > 0 ? 'Active Picking on Aisle' : 'Standby / Awaiting Orders';
+
+    res.json({
+      success: true,
+      employee: {
+        userId: user.UserID,
+        name: `${user.UserNameFirst} ${user.UserNameLast || ''}`.trim(),
+        role: user.Role,
+        mobile: user.Mobile,
+        email: user.Email,
+        profileImage: user.ProfileImageUrl,
+        isActive: user.IsActive,
+        isOnline: user.IsOnline
+      },
+      duty: duty ? {
+        dutyId: duty.DutyID,
+        shiftSlot: duty.ShiftSlot || 'General Slot',
+        punchInTime: duty.PunchInTime,
+        punchOutTime: duty.PunchOutTime,
+        selfieUrl: duty.SelfieUrl,
+        approvalStatus: duty.ApprovalStatus,
+        approvalCode: duty.ApprovalCode,
+        durationText: dutyDurationText,
+        date: duty.Date
+      } : {
+        dutyId: null,
+        shiftSlot: 'General Slot',
+        punchInTime: null,
+        punchOutTime: null,
+        selfieUrl: null,
+        approvalStatus: 'OFF_DUTY',
+        approvalCode: null,
+        durationText: 'Off Duty',
+        date: new Date()
+      },
+      stats: {
+        putawayCount: placedItems.length,
+        putawayUnits: totalPlacedQty,
+        pickingCount: pickedItems.length,
+        pickingUnits: totalPickedQty,
+        returnsCount: returnCount,
+        transfersCount: transferCount
+      },
+      putaway: {
+        since: dutyStartTime,
+        duration: dutyDurationText,
+        totalPlacedItems: placedItems.length,
+        totalPlacedUnits: totalPlacedQty,
+        placedItems: placedItems,
+        pendingFloorItems: pendingFloorItems,
+        totalPendingFloorQty: totalPendingFloorQty,
+        currentProcessingStatus: putawayProcessingStatus
+      },
+      picking: {
+        since: dutyStartTime,
+        duration: dutyDurationText,
+        totalPickedItems: pickedItems.length,
+        totalPickedUnits: totalPickedQty,
+        pickedItems: pickedItems,
+        pendingOrdersCount: 0,
+        currentProcessingStatus: pickingProcessingStatus
+      }
+    });
+  } catch (err) {
+    console.error('Duty record details fetch error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ==========================================
 // STAFF PAYOUT MANAGEMENT APIS (SUPERADMIN & MANAGER)
 // ==========================================
@@ -621,6 +993,54 @@ app.get('/api/admin/payouts', async (req, res) => {
   } catch (err) {
     console.error('Payouts fetch error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Putaway Tasks Audit Log (Floor to Shelf Movements)
+app.get('/api/admin/putaway-tasks', async (req, res) => {
+  try {
+    const movements = await prisma.stockMovements.findMany({
+      where: {
+        OR: [
+          { Type: 'PUTAWAY' },
+          { Type: { contains: 'PUT', mode: 'insensitive' } },
+          { Reason: { contains: 'Putaway', mode: 'insensitive' } }
+        ]
+      },
+      orderBy: { Date: 'desc' },
+      take: 200
+    });
+
+    const tasks = [];
+    for (const m of movements) {
+      let v = null;
+      let p = null;
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
+        if (v) p = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+      } catch (e) {}
+
+      tasks.push({
+        movementId: m.MovementID,
+        pickerId: m.CreatedBy || 1,
+        staffName: m.CreatedByName || `Staff #${m.CreatedBy || 1}`,
+        time: m.Date,
+        outShelf: m.FromShelf || 'FL01',
+        inShelf: m.ToShelf || 'N/A',
+        itemId: m.VariantID,
+        itemName: p ? p.ProductName : (v ? v.SKU : `Item #${m.VariantID}`),
+        sku: v ? v.SKU : '',
+        unit: v ? v.Unit : 'PCS',
+        qty: m.Qty || 0,
+        type: m.Type || 'PUTAWAY',
+        status: m.Status || 'COMPLETED'
+      });
+    }
+
+    res.json({ success: true, count: tasks.length, tasks });
+  } catch (err) {
+    console.error('Error fetching putaway tasks:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

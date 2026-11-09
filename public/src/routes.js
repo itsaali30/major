@@ -28,7 +28,13 @@ const routes = [
   { path: '/admin/stockmanagement', component: AdminInventory, meta: { title: 'Stock Management' } },
   { path: '/admin/purchase/:section?', component: AdminPurchase, meta: { title: 'Purchase Management' } },
   { path: '/admin/duty-records', component: AdminDutyRecords, meta: { title: 'Staff Duty Records & Approvals' } },
+  { path: '/admin/duty-records/:id', component: AdminDutyRecordDetails, meta: { title: 'Staff Duty & Activity Details' } },
+  { path: '/admin/duty-records/:id/putaway', component: AdminDutyRecordDetails, meta: { title: 'Staff Putaway Details' } },
+  { path: '/admin/duty-records/:id/picking', component: AdminDutyRecordDetails, meta: { title: 'Staff Picking Details' } },
   { path: '/admin/payouts', component: AdminPayouts, meta: { title: 'Staff Payouts' } },
+  { path: '/admin/putway-task', component: AdminPutawayTask, meta: { title: 'Putaway Tasks' } },
+  { path: '/admin/putaway-task', redirect: '/admin/putway-task' },
+  { path: '/admin/putaway-tasks', redirect: '/admin/putway-task' },
   { path: '/inwms', redirect: '/' },
   { path: '/wms', redirect: '/' }
 ];

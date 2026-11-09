@@ -131,7 +131,7 @@ const AdminDutyRecords = {
                   </td>
                 </tr>
                 <tr v-for="rec in records" :key="rec.userId"
-                    @click="openDetailModal(rec)"
+                    @click="goToDetails(rec)"
                     class="cursor-pointer"
                     :class="{'table-warning': rec.approvalStatus === 'PENDING_APPROVAL', 'table-success-subtle': rec.approvalStatus === 'ACTIVE'}"
                     style="cursor: pointer;">
@@ -206,54 +206,72 @@ const AdminDutyRecords = {
                       </button>
 
                       <button v-else-if="rec.approvalStatus === 'ACTIVE'"
-                              @click="openDetailModal(rec)"
+                              @click="goToDetails(rec)"
                               class="btn btn-sm btn-outline-success font-weight-bold">
                         <i class="bi bi-person-check-fill"></i> Duty Active
                       </button>
 
                       <button v-else
-                              @click="openDetailModal(rec)"
+                              @click="goToDetails(rec)"
                               class="btn btn-sm btn-outline-secondary">
                         <i class="bi bi-eye"></i> Details
                       </button>
 
-                      <!-- 3-Dot Dropdown Menu (Force Checkout, Force Logout, View Details) -->
+                      <!-- 3-Dot Dropdown Menu (checkout, forcecheckin, id-terminate, id-disable, id-active) -->
                       <div class="dropdown d-inline-block">
                         <button class="btn btn-sm btn-light border dropdown-toggle dropdown-toggle-split px-2"
                                 type="button"
                                 :id="'dropdownMenu_' + rec.userId"
                                 data-bs-toggle="dropdown"
                                 aria-expanded="false"
-                                title="More Employee Actions">
+                                title="More Actions">
                           <i class="bi bi-three-dots-vertical"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm" :aria-labelledby="'dropdownMenu_' + rec.userId">
                           <li>
                             <h6 class="dropdown-header text-uppercase font-weight-bold" style="font-size: 10px;">
-                              {{ rec.employeeName }} Actions
+                              {{ rec.employeeName }} (ID #{{ rec.userId }})
                             </h6>
                           </li>
                           <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2" href="javascript:void(0)" @click="openDetailModal(rec)">
-                              <i class="bi bi-card-checklist text-primary"></i> View Shift History & Details
+                            <a class="dropdown-item d-flex align-items-center gap-2" href="javascript:void(0)" @click="goToDetails(rec)">
+                              <i class="bi bi-person-workspace text-primary"></i> View Activity Details (:id)
                             </a>
                           </li>
                           <li v-if="rec.approvalStatus === 'PENDING_APPROVAL'">
                             <a class="dropdown-item d-flex align-items-center gap-2 text-success font-weight-bold" href="javascript:void(0)" @click="openApproveModal(rec)">
-                              <i class="bi bi-shield-check"></i> Approve Punch-In (4-Digit Code)
+                              <i class="bi bi-shield-check"></i> Approve PIN (Issue 4-Digit)
                             </a>
                           </li>
                           <li><hr class="dropdown-divider"></li>
-                          <!-- Force Checkout -->
+                          <!-- Force Checkin -->
                           <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 text-warning" href="javascript:void(0)" @click="promptForceCheckout(rec)">
-                              <i class="bi bi-box-arrow-right text-warning"></i> Force Checkout (Punch Out)
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-success" href="javascript:void(0)" @click="executeDutyAction('forcecheckin', rec)">
+                              <i class="bi bi-box-arrow-in-right text-success"></i> Force Check-In
                             </a>
                           </li>
-                          <!-- Force Logout -->
+                          <!-- Checkout -->
                           <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 text-danger" href="javascript:void(0)" @click="promptForceLogout(rec)">
-                              <i class="bi bi-person-x-fill text-danger"></i> Force Logout (Terminate Session)
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-warning" href="javascript:void(0)" @click="executeDutyAction('checkout', rec)">
+                              <i class="bi bi-box-arrow-right text-warning"></i> Checkout (Punch Out)
+                            </a>
+                          </li>
+                          <!-- Terminate Duty -->
+                          <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-danger" href="javascript:void(0)" @click="executeDutyAction('id-terminate', rec)">
+                              <i class="bi bi-x-octagon text-danger"></i> Terminate Duty
+                            </a>
+                          </li>
+                          <li><hr class="dropdown-divider"></li>
+                          <!-- ID Disable / Active -->
+                          <li v-if="rec.isActive !== false">
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-danger" href="javascript:void(0)" @click="executeDutyAction('id-disable', rec)">
+                              <i class="bi bi-slash-circle text-danger"></i> Disable Account (ID Disable)
+                            </a>
+                          </li>
+                          <li v-else>
+                            <a class="dropdown-item d-flex align-items-center gap-2 text-success" href="javascript:void(0)" @click="executeDutyAction('id-active', rec)">
+                              <i class="bi bi-check2-circle text-success"></i> Activate Account (ID Active)
                             </a>
                           </li>
                         </ul>
@@ -489,6 +507,45 @@ const AdminDutyRecords = {
         console.error('Error fetching duty records:', err);
       } finally {
         this.loading = false;
+      }
+    },
+    goToDetails(rec) {
+      if (!rec) return;
+      const targetId = rec.dutyId || rec.userId;
+      this.$router.push(`/admin/duty-records/${targetId}`);
+    },
+    async executeDutyAction(action, rec) {
+      if (!rec) return;
+      const actionLabels = {
+        'forcecheckin': 'Force Check-In (Direct Activate Duty)',
+        'checkout': 'Checkout (Punch Out)',
+        'id-terminate': 'Terminate Duty Session',
+        'id-disable': 'Disable Account / ID',
+        'id-active': 'Activate Account / ID'
+      };
+      const label = actionLabels[action] || action;
+      const confirmed = confirm(`Kya aap sure hain ${rec.employeeName} ke liye '${label}' action run karne ke liye?`);
+      if (!confirmed) return;
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.post('/api/admin/duty-action', {
+          action,
+          userId: rec.userId,
+          dutyId: rec.dutyId,
+          reason: `Admin triggered ${action} from duty records list`
+        }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+
+        if (res.data.success) {
+          alert(`✅ ${res.data.message}`);
+          this.fetchDutyRecords();
+        } else {
+          alert('Action error: ' + res.data.message);
+        }
+      } catch (err) {
+        alert('Duty action failed: ' + (err.response?.data?.message || err.message));
       }
     },
     openDetailModal(employee) {
