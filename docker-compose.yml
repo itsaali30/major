@@ -56,6 +56,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/ecommerce_db?schema=public
       JWT_SECRET: super-secret-jwt-key
+      WMS_URL: http://wms:3001
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
       MINIO_USE_SSL: "false"

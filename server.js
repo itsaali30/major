@@ -434,7 +434,8 @@ app.post('/api/admin/duty-force-checkout', async (req, res) => {
 
     // Realtime Socket.io Sync to WMS
     try {
-      await fetch('http://localhost:3001/api/auth/socket-broadcast', {
+      const wmsBase = process.env.WMS_URL || 'http://wms:3001';
+      await fetch(`${wmsBase}/api/auth/socket-broadcast`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -496,7 +497,8 @@ app.post('/api/admin/duty-force-logout', async (req, res) => {
 
     // Realtime Socket.io Sync to WMS
     try {
-      await fetch('http://localhost:3001/api/auth/socket-broadcast', {
+      const wmsBase = process.env.WMS_URL || 'http://wms:3001';
+      await fetch(`${wmsBase}/api/auth/socket-broadcast`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
