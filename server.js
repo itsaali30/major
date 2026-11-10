@@ -1098,6 +1098,362 @@ app.post('/api/admin/payout-create', async (req, res) => {
   }
 });
 
+// ==========================================
+// 1. INWARD GOODS RECEIPT LOG FOR STORE & SHELVES (/api/admin/stores/:id/inward-receipts)
+// ==========================================
+app.get('/api/admin/stores/:storeId/inward-receipts', async (req, res) => {
+  try {
+    const storeId = parseInt(req.params.storeId);
+    if (isNaN(storeId)) {
+      return res.status(400).json({ success: false, message: 'Invalid store ID' });
+    }
+
+    const store = await prisma.stores.findUnique({
+      where: { StoreID: storeId },
+      include: { Warehouse: true }
+    });
+
+    // 1. Query GRNs for this store
+    const grns = await prisma.gRNs.findMany({
+      where: { StoreID: storeId },
+      include: { Items: true },
+      orderBy: { CreatedAt: 'desc' },
+      take: 100
+    });
+
+    const receipts = [];
+    for (const g of grns) {
+      let merchantName = 'Direct Vendor';
+      try {
+        if (g.MerchantID) {
+          const m = await prisma.merchants.findUnique({ where: { MerchantID: g.MerchantID } });
+          if (m) merchantName = m.Name;
+        }
+      } catch (e) {}
+
+      let officerName = g.ReceivedByName || 'Officer';
+      let officerId = g.ReceivedByID || 'N/A';
+      if (!g.ReceivedByName && g.ReceivedByID) {
+        try {
+          const u = await prisma.users.findUnique({ where: { UserID: g.ReceivedByID } });
+          if (u) officerName = `${u.UserNameFirst} ${u.UserNameLast || ''}`.trim();
+        } catch (e) {}
+      }
+
+      let shelfCode = 'FL01';
+      if (g.ShelfID) {
+        try {
+          const sh = await prisma.shelves.findUnique({ where: { ShelfID: g.ShelfID } });
+          if (sh) shelfCode = sh.ShelfCode;
+        } catch (e) {}
+      }
+
+      for (const it of (g.Items || [])) {
+        let v = null;
+        try {
+          v = await prisma.variants.findUnique({ where: { VariantID: it.VariantID } });
+        } catch (e) {}
+
+        receipts.push({
+          grnNumber: g.GRNNumber || `GRN-${g.GRNID}`,
+          type: g.Type === 'PO' ? 'Against PO' : (g.Type || 'Direct Vendor Receipt'),
+          itemName: it.VariantName || (v ? v.SKU : `Item #${it.VariantID}`),
+          sku: v ? v.SKU : '',
+          qty: it.Qty || 0,
+          unit: v ? v.Unit : 'PCS',
+          receivedByName: officerName,
+          receivedById: officerId,
+          receivedAt: g.ReceivedAt ? new Date(g.ReceivedAt).toLocaleString() : (g.CreatedAt ? new Date(g.CreatedAt).toLocaleString() : 'Recent'),
+          merchant: merchantName,
+          shelfCode: shelfCode,
+          remarks: g.Remarks || ''
+        });
+      }
+    }
+
+    // 2. Also check inward stock movements
+    const movements = await prisma.stockMovements.findMany({
+      where: {
+        ToStoreID: storeId,
+        OR: [
+          { Type: 'INWARD' },
+          { Type: 'PURCHASE' },
+          { Type: 'INITIAL' },
+          { FromShelf: 'VENDOR' },
+          { FromShelf: 'VENDOR_DIRECT' }
+        ]
+      },
+      orderBy: { Date: 'desc' },
+      take: 50
+    });
+
+    for (const m of movements) {
+      let v = null;
+      let prod = null;
+      let officerName = 'Receiving Staff';
+      try {
+        v = await prisma.variants.findUnique({ where: { VariantID: m.VariantID } });
+        if (v) prod = await prisma.products.findUnique({ where: { ProductID: v.ProductID } });
+        if (m.CreatedBy) {
+          const u = await prisma.users.findUnique({ where: { UserID: m.CreatedBy } });
+          if (u) officerName = `${u.UserNameFirst} ${u.UserNameLast || ''}`.trim();
+        }
+      } catch (e) {}
+
+      receipts.push({
+        grnNumber: `REC-${m.MovementID}`,
+        type: m.Type || 'Floor Inward Supply',
+        itemName: prod ? prod.ProductName : (v ? v.SKU : `Item #${m.VariantID}`),
+        sku: v ? v.SKU : '',
+        qty: m.Qty || 0,
+        unit: v ? v.Unit : 'PCS',
+        receivedByName: officerName,
+        receivedById: m.CreatedBy || 1,
+        receivedAt: m.Date ? new Date(m.Date).toLocaleString() : 'Recent',
+        merchant: 'Global Farm / Vendor Supply',
+        shelfCode: m.ToShelf || 'FL01',
+        remarks: m.Remarks || 'Inward stock placed on floor'
+      });
+    }
+
+    // Find the latest receipt for floor shelf (FL-01 / FL01 / Floor)
+    const floorReceipts = receipts.filter(r => 
+      (r.shelfCode || '').toUpperCase().includes('FL') || 
+      (r.shelfCode || '').toUpperCase().includes('FLOOR')
+    );
+    const lastFloorRecord = floorReceipts.length > 0 ? floorReceipts[0] : (receipts[0] || null);
+
+    res.json({
+      success: true,
+      store: store ? { storeId: store.StoreID, storeName: store.StoreName, type: store.Type } : null,
+      lastFloorRecord,
+      receipts
+    });
+  } catch (err) {
+    console.error('Inward receipts error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==========================================
+// 2. INVENTORY AUDIT & ITEM MOVEMENTS (/api/admin/inventory/movement-audit/:variantId)
+// ==========================================
+app.get('/api/admin/inventory/movement-audit/:variantId', async (req, res) => {
+  try {
+    const variantId = parseInt(req.params.variantId);
+    if (isNaN(variantId)) {
+      return res.status(400).json({ success: false, message: 'Invalid variant ID' });
+    }
+
+    const variant = await prisma.variants.findUnique({
+      where: { VariantID: variantId }
+    });
+    if (!variant) {
+      return res.status(404).json({ success: false, message: 'Variant not found' });
+    }
+
+    const product = await prisma.products.findUnique({
+      where: { ProductID: variant.ProductID }
+    });
+
+    // 1. Physical Locations & Stock breakdown across stores and shelves
+    const stocks = await prisma.stocks.findMany({
+      where: { VariantID: variantId }
+    });
+
+    const locations = [];
+    let totalOnHand = 0;
+    let totalAvailable = 0;
+    for (const s of stocks) {
+      totalOnHand += (s.OnHandQty || 0);
+      totalAvailable += (s.AvailableQty || 0);
+
+      let store = null;
+      let shelf = null;
+      try {
+        store = await prisma.stores.findUnique({ where: { StoreID: s.StoreID }, include: { Warehouse: true } });
+        if (s.ShelfID) {
+          shelf = await prisma.shelves.findUnique({ where: { ShelfID: s.ShelfID } });
+        }
+      } catch (e) {}
+
+      locations.push({
+        stockId: s.StockID,
+        storeId: s.StoreID,
+        storeName: store ? store.StoreName : `Store #${s.StoreID}`,
+        storeType: store ? store.Type : 'Store',
+        warehouseName: store?.Warehouse ? store.Warehouse.Name : 'Main WH',
+        shelfId: s.ShelfID,
+        shelfCode: shelf ? shelf.ShelfCode : (store?.Type === 'Floor' ? 'FL01' : 'Unassigned'),
+        onHandQty: s.OnHandQty || 0,
+        availableQty: s.AvailableQty || 0,
+        reservedQty: s.ReservedQty || 0
+      });
+    }
+
+    // 2. Movements history (Sale, Transfer, Putaway, Inward, Return)
+    const rawMovements = await prisma.stockMovements.findMany({
+      where: { VariantID: variantId },
+      orderBy: { Date: 'desc' },
+      take: 100
+    });
+
+    let totalSoldQty = 0;
+    const movements = [];
+    for (const m of rawMovements) {
+      const typeStr = (m.Type || '').toUpperCase();
+      if (typeStr === 'SALE' || typeStr === 'OUTBOUND' || typeStr === 'PICKING') {
+        totalSoldQty += (m.Qty || 0);
+      }
+
+      let officerName = m.CreatedByName || 'System Staff';
+      if (m.CreatedBy) {
+        try {
+          const u = await prisma.users.findUnique({ where: { UserID: m.CreatedBy } });
+          if (u) officerName = `${u.UserNameFirst} ${u.UserNameLast || ''}`.trim() + ` (#${u.UserID})`;
+        } catch (e) {}
+      }
+
+      let fromStoreName = m.FromShelf || 'Floor';
+      if (m.FromStoreID) {
+        try {
+          const fs = await prisma.stores.findUnique({ where: { StoreID: m.FromStoreID } });
+          if (fs) fromStoreName = `${fs.StoreName} (${m.FromShelf || 'FL01'})`;
+        } catch (e) {}
+      }
+
+      let toStoreName = m.ToShelf || 'Customer';
+      if (m.ToStoreID) {
+        try {
+          const ts = await prisma.stores.findUnique({ where: { StoreID: m.ToStoreID } });
+          if (ts) toStoreName = `${ts.StoreName} (${m.ToShelf || 'FL01'})`;
+        } catch (e) {}
+      }
+
+      movements.push({
+        movementId: m.MovementID,
+        date: m.Date ? new Date(m.Date).toLocaleString() : '—',
+        type: m.Type || 'TRANSFER',
+        qty: m.Qty || 0,
+        from: fromStoreName,
+        to: toStoreName,
+        officer: officerName,
+        remarks: m.Reason || ''
+      });
+    }
+
+    res.json({
+      success: true,
+      item: {
+        variantId: variant.VariantID,
+        productId: variant.ProductID,
+        productName: product ? product.ProductName : 'Product',
+        sku: variant.SKU,
+        specs: [variant.Size, variant.Color].filter(Boolean).join(' • ') || 'Standard',
+        unit: variant.Unit || 'PCS',
+        unitCost: variant.CostPrice || 0,
+        salePrice: variant.SalePrice || 0,
+        totalOnHand,
+        totalAvailable,
+        soldQty: totalSoldQty
+      },
+      locations,
+      movements
+    });
+  } catch (err) {
+    console.error('Inventory movement audit error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==========================================
+// 3. INVENTORY STOCK RECONCILIATION & CHECK (/api/admin/inventory/audit-adjust)
+// ==========================================
+app.post('/api/admin/inventory/audit-adjust', async (req, res) => {
+  try {
+    const { variantId, storeId, shelfId, oldQty, newQty, auditorName, auditorId, notes } = req.body;
+    if (!variantId || storeId === undefined || newQty === undefined) {
+      return res.status(400).json({ success: false, message: 'VariantID, StoreID, and NewQty are required' });
+    }
+
+    const vId = parseInt(variantId);
+    const sId = parseInt(storeId);
+    const countedQty = parseFloat(newQty);
+    const previousQty = parseFloat(oldQty) || 0;
+    const diff = countedQty - previousQty;
+
+    let stock = await prisma.stocks.findFirst({
+      where: { VariantID: vId, StoreID: sId }
+    });
+
+    if (stock) {
+      await prisma.stocks.update({
+        where: { StockID: stock.StockID },
+        data: {
+          OnHandQty: countedQty,
+          AvailableQty: Math.max(0, countedQty - (stock.ReservedQty || 0)),
+          ShelfID: shelfId ? parseInt(shelfId) : stock.ShelfID
+        }
+      });
+    } else {
+      stock = await prisma.stocks.create({
+        data: {
+          VariantID: vId,
+          StoreID: sId,
+          ShelfID: shelfId ? parseInt(shelfId) : null,
+          OnHandQty: countedQty,
+          AvailableQty: countedQty,
+          ReservedQty: 0
+        }
+      });
+    }
+
+    // Log StockMovement for this check
+    let shelfCode = 'STOCK';
+    if (shelfId) {
+      try {
+        const sh = await prisma.shelves.findUnique({ where: { ShelfID: parseInt(shelfId) } });
+        if (sh) shelfCode = sh.ShelfCode;
+      } catch (e) {}
+    }
+
+    const timestamp = new Date();
+    const parsedAuditorId = parseInt(auditorId);
+    await prisma.stockMovements.create({
+      data: {
+        VariantID: vId,
+        FromStoreID: sId,
+        ToStoreID: sId,
+        FromShelf: shelfCode,
+        ToShelf: shelfCode,
+        Qty: Math.abs(diff),
+        Type: 'INVENTORY_AUDIT_CHECK',
+        Date: timestamp,
+        CreatedBy: !isNaN(parsedAuditorId) ? parsedAuditorId : 1,
+        CreatedByName: auditorName || 'Inventory Officer',
+        Reason: `Physical Inventory Count: Porana Stock=${previousQty}, Ab Check Kiya=${countedQty} (Diff: ${diff >= 0 ? '+' : ''}${diff}). Auditor: ${auditorName || 'Admin'} (#${auditorId || 1}). Notes: ${notes || 'Verified & Reconciled'}`
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Stock successfully verified & updated to ${countedQty} units! Difference of ${diff >= 0 ? '+' : ''}${diff} logged.`,
+      stock: {
+        variantId: vId,
+        storeId: sId,
+        shelfCode,
+        oldQty: previousQty,
+        newQty: countedQty,
+        auditor: auditorName,
+        time: timestamp.toLocaleString()
+      }
+    });
+  } catch (err) {
+    console.error('Inventory audit adjust error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
 async function startServer() {
   const server = new ApolloServer({

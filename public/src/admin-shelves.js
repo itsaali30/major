@@ -43,6 +43,66 @@ const AdminShelves = {
             </div>
             
             <div class="card-body p-4">
+              <!-- ========================================== -->
+              <!-- 1. LAST INWARD RECORD ON FLOOR SHELF (FL-01) -->
+              <!-- ========================================== -->
+              <div v-if="lastFloorRecord" class="card border-0 shadow-sm mb-4 rounded-4" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: white;">
+                <div class="card-body p-3 p-md-4">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge bg-warning text-dark px-2.5 py-1.5 fw-bold fs-7 rounded-pill">
+                        <i class="bi bi-box-arrow-in-down-right me-1"></i> FLOOR SHELF: FL-01
+                      </span>
+                      <h5 class="mb-0 fw-bold text-white">Last Inward Goods Receipt (Floor Entry)</h5>
+                    </div>
+                    <span class="badge bg-primary-subtle text-primary border border-primary font-monospace fs-7">
+                      {{ lastFloorRecord.grnNumber }}
+                    </span>
+                  </div>
+
+                  <div class="row g-3 align-items-center mt-1">
+                    <div class="col-md-3">
+                      <small class="text-white-50 text-uppercase fw-bold d-block">Item Name & SKU</small>
+                      <div class="fw-bold fs-6 text-white">{{ lastFloorRecord.itemName }}</div>
+                      <small class="text-white-50 font-monospace">SKU: {{ lastFloorRecord.sku || 'N/A' }}</small>
+                    </div>
+
+                    <div class="col-md-2">
+                      <small class="text-white-50 text-uppercase fw-bold d-block">Qty Received</small>
+                      <div class="fs-4 fw-bolder text-success font-monospace">+{{ lastFloorRecord.qty }} <span class="fs-6 fw-normal text-white-50">{{ lastFloorRecord.unit || 'units' }}</span></div>
+                    </div>
+
+                    <div class="col-md-3">
+                      <small class="text-white-50 text-uppercase fw-bold d-block">Received By (Officer & ID)</small>
+                      <div class="fw-bold text-white d-flex align-items-center gap-1.5">
+                        <i class="bi bi-person-badge-fill text-warning"></i>
+                        <span>{{ lastFloorRecord.receivedByName }}</span>
+                      </div>
+                      <small class="text-white-50">Staff ID: <strong>#{{ lastFloorRecord.receivedById }}</strong></small>
+                    </div>
+
+                    <div class="col-md-2">
+                      <small class="text-white-50 text-uppercase fw-bold d-block">Received At (Timestamp)</small>
+                      <div class="small font-monospace text-white">{{ lastFloorRecord.receivedAt }}</div>
+                      <span class="badge bg-secondary-subtle text-light mt-1">{{ lastFloorRecord.type }}</span>
+                    </div>
+
+                    <div class="col-md-2 text-md-end">
+                      <small class="text-white-50 text-uppercase fw-bold d-block">Merchant / Vendor</small>
+                      <div class="fw-bold text-warning small">{{ lastFloorRecord.merchant }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Shelf Listing Table -->
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="fw-bold text-dark mb-0">
+                  <i class="bi bi-grid-3x3-gap-fill text-primary me-1"></i> Store Shelves Breakdown
+                </h5>
+                <span class="badge bg-light text-dark border">{{ shelves.length }} Shelves Configured</span>
+              </div>
+
               <div v-if="loading" class="text-center py-5">
                  <div class="spinner-border text-primary"></div>
                  <p class="text-muted mt-2">Loading shelves and audit records...</p>
@@ -98,6 +158,87 @@ const AdminShelves = {
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <!-- ========================================== -->
+              <!-- 2. INWARD GOODS RECEIPT LOG (KOUN RECEIVED KARA) -->
+              <!-- ========================================== -->
+              <div class="card border-0 shadow-sm mt-5 mb-2">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+                  <div>
+                    <h5 class="mb-0 fw-bold text-dark">
+                      <i class="bi bi-box-arrow-in-down-right text-success me-2"></i>
+                      Inward Goods Receipt Log (Koun Received Kara)
+                    </h5>
+                    <small class="text-muted">Live incoming goods log: Floor & Shelves receipts, officer audits, and vendor supply</small>
+                  </div>
+                  <button @click="fetchInwardReceipts" class="btn btn-sm btn-outline-primary fw-bold">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh Log
+                  </button>
+                </div>
+                <div class="card-body p-0">
+                  <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                      <thead class="bg-light small text-uppercase text-muted">
+                        <tr>
+                          <th class="ps-3">GRN #</th>
+                          <th>Type</th>
+                          <th>Item Name & SKU</th>
+                          <th class="text-center">Qty Received</th>
+                          <th>Received By (Officer Name & ID)</th>
+                          <th>Received At (Timestamp)</th>
+                          <th class="pe-3">Merchant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="loadingInward">
+                          <td colspan="7" class="text-center py-4 text-muted">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading inward receipts log...
+                          </td>
+                        </tr>
+                        <tr v-else-if="inwardReceipts.length === 0">
+                          <td colspan="7" class="text-center py-4 text-muted">
+                            No inward goods receipt records logged for this store yet.
+                          </td>
+                        </tr>
+                        <tr v-for="(rcv, idx) in inwardReceipts" :key="idx" :class="{'table-warning': idx === 0}">
+                          <td class="ps-3">
+                            <span class="font-monospace fw-bold text-primary">{{ rcv.grnNumber }}</span>
+                            <div v-if="idx === 0" class="badge bg-warning text-dark font-monospace x-small d-block mt-0.5" style="font-size: 10px;">
+                              LAST RECORD
+                            </div>
+                          </td>
+                          <td>
+                            <span class="badge" :class="rcv.type && rcv.type.includes('PO') ? 'bg-primary-subtle text-primary border' : 'bg-success-subtle text-success border'">
+                              {{ rcv.type }}
+                            </span>
+                          </td>
+                          <td>
+                            <div class="fw-bold small text-dark">{{ rcv.itemName }}</div>
+                            <small class="text-muted font-monospace">SKU: {{ rcv.sku || 'N/A' }} | Target: {{ rcv.shelfCode || 'FL01' }}</small>
+                          </td>
+                          <td class="text-center">
+                            <span class="font-monospace fw-bolder fs-6 text-success">+{{ rcv.qty }}</span>
+                            <span class="text-muted x-small d-block">{{ rcv.unit || 'units' }}</span>
+                          </td>
+                          <td>
+                            <div class="fw-bold small text-dark d-flex align-items-center gap-1.5">
+                              <i class="bi bi-person-badge text-primary"></i>
+                              <span>{{ rcv.receivedByName }}</span>
+                            </div>
+                            <small class="text-muted">Staff / Officer ID: <strong>#{{ rcv.receivedById }}</strong></small>
+                          </td>
+                          <td>
+                            <div class="small font-monospace">{{ rcv.receivedAt }}</div>
+                          </td>
+                          <td class="pe-3">
+                            <span class="badge bg-light text-dark border">{{ rcv.merchant }}</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -371,7 +512,10 @@ const AdminShelves = {
       shelfModalInstance: null,
       shelfAuditModalInstance: null,
       selectedShelfAudit: null,
-      auditTab: 'items' // 'items', 'receivings', 'movements'
+      auditTab: 'items', // 'items', 'receivings', 'movements'
+      inwardReceipts: [],
+      lastFloorRecord: null,
+      loadingInward: false
     };
   },
   async mounted() {
@@ -383,8 +527,28 @@ const AdminShelves = {
     }
     await this.fetchStore();
     await this.fetchShelves();
+    await this.fetchInwardReceipts();
   },
   methods: {
+    async fetchInwardReceipts() {
+      const storeId = parseInt(this.$route.params.StoreID);
+      if (isNaN(storeId)) return;
+      this.loadingInward = true;
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.get(`/api/admin/stores/${storeId}/inward-receipts`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.data.success) {
+          this.inwardReceipts = res.data.receipts || [];
+          this.lastFloorRecord = res.data.lastFloorRecord || null;
+        }
+      } catch (err) {
+        console.warn('Error fetching inward receipts:', err.message);
+      } finally {
+        this.loadingInward = false;
+      }
+    },
     async fetchStore() {
       const storeId = parseInt(this.$route.params.StoreID);
       const query = `

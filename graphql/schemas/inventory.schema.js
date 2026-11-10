@@ -47,6 +47,7 @@ const inventorySchema = `#graphql
     UnitSalePrice: Float
     CostValue: Float
     SaleValue: Float
+    SoldQty: Int
   }
 
   extend type Query {

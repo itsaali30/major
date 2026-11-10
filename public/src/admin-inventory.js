@@ -37,6 +37,10 @@ const AdminInventory = {
           border-left: 4px solid #dc3545;
           background-color: #fef2f2;
         }
+        .audit-card {
+          border-left: 4px solid #198754;
+          background-color: #f0fdf4;
+        }
       </style>
 
       <!-- Header & Warehouse / Store Selectors -->
@@ -45,7 +49,7 @@ const AdminInventory = {
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div>
                <h4 class="mb-1 fw-bold text-dark"><i class="bi bi-stack me-2 text-primary"></i> Stock & Inventory Valuation Management</h4>
-               <p class="text-muted small mb-0">Live stock valuation, Cost Value, Sale Value, Current Stock levels, and Return Store tracking.</p>
+               <p class="text-muted small mb-0">Live stock valuation, Cost Value, Sale Value, UOM, Sold Qty, Current Stock levels, and Physical Inventory Auditing.</p>
             </div>
             
             <div class="d-flex flex-wrap gap-3 align-items-center">
@@ -83,7 +87,7 @@ const AdminInventory = {
         </div>
       </div>
 
-      <!-- 4 Prominent Valuation & Current Stock KPI Cards (Requested: CURRENT STOCK, COST VALUE, SALE VALUE) -->
+      <!-- 4 Prominent Valuation & Current Stock KPI Cards -->
       <div class="row g-3 mb-4">
          <!-- Card 1: CURRENT STOCK (Live Total Units) -->
          <div class="col-lg-3 col-md-6">
@@ -94,7 +98,7 @@ const AdminInventory = {
                </div>
                <h2 class="fw-bold text-success mt-2 mb-0">{{ summaryStats.totalCurrentStock }} <small class="fs-6 fw-normal text-muted">Units</small></h2>
                <div class="x-small text-muted mt-2">
-                  Total On-Hand: <strong>{{ summaryStats.totalOnHand }}</strong> | Reserved: <strong>{{ summaryStats.totalReserved }}</strong>
+                  Total On-Hand: <strong>{{ summaryStats.totalOnHand }}</strong> | Sold: <strong>{{ summaryStats.totalSold }}</strong>
                </div>
             </div>
          </div>
@@ -147,44 +151,45 @@ const AdminInventory = {
         <div class="card-header bg-white border-bottom py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
            <div class="d-flex align-items-center gap-2">
               <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-table me-2 text-primary"></i> Stock Valuation & Inventory Matrix</h5>
-              <span class="badge bg-primary ms-2">{{ filteredStocks.length }} Displayed Items</span>
+              <span class="badge bg-primary ms-2">{{ filteredStocks.length }} Items</span>
            </div>
            <div class="d-flex gap-2 align-items-center">
               <button class="btn btn-sm btn-outline-secondary" @click="resetFilters" v-if="hasActiveFilters">
                  <i class="bi bi-x-circle me-1"></i> Clear Filters
               </button>
               <div class="text-secondary small">
-                 <i class="bi bi-info-circle me-1"></i> Click row to inspect location & return store
+                 <i class="bi bi-info-circle me-1"></i> Click row to see movement history (kaha se kaha gaya) or click <strong>Inventory</strong> to count physical stock.
               </div>
            </div>
         </div>
 
         <div v-if="loading" class="text-center py-5">
            <div class="spinner-border text-primary" role="status"></div>
-           <p class="text-muted mt-2">Calculating stock values & locations...</p>
+           <p class="text-muted mt-2">Calculating stock values & movements...</p>
         </div>
 
         <div v-else class="table-responsive">
           <table class="table align-middle mb-0 table-hover">
             <!-- Table Main Header Row -->
+            <!-- Required: Product & Specs | Unit Cost | Cost Value | Sale Price | Sale Value | UOM | On Hand | Sold Qty | CURRENT STOCK | Location & Return | Inventory Btn -->
             <thead class="bg-dark text-white small text-uppercase">
                <tr>
-                  <th class="ps-3" style="min-width: 200px;">Product & Specs</th>
-                  <th style="min-width: 140px;">Store</th>
-                  <th style="min-width: 100px;">Shelf</th>
+                  <th class="ps-3" style="min-width: 220px;">Product & Specs</th>
                   <th class="text-end" style="min-width: 100px;">Unit Cost</th>
                   <th class="text-end" style="min-width: 110px;">Cost Value</th>
                   <th class="text-end" style="min-width: 100px;">Sale Price</th>
                   <th class="text-end" style="min-width: 110px;">Sale Value</th>
+                  <th class="text-center" style="min-width: 80px;">UOM</th>
                   <th class="text-center" style="min-width: 90px;">On Hand</th>
-                  <!-- CURRENT STOCK HEADING (Requested) -->
-                  <th class="text-center current-stock-header fw-bold" style="min-width: 140px;">
+                  <th class="text-center" style="min-width: 90px;">Sold Qty</th>
+                  <th class="text-center current-stock-header fw-bold" style="min-width: 130px;">
                      <i class="bi bi-box-seam me-1"></i> CURRENT STOCK
                   </th>
-                  <th class="text-end pe-3" style="min-width: 140px;">Location & Return</th>
+                  <th style="min-width: 160px;">Location & Return</th>
+                  <th class="text-end pe-3" style="min-width: 150px;">Actions</th>
                </tr>
 
-               <!-- FILTER HEADING ROW (Requested: "fitter heading row hona add karoyeh") -->
+               <!-- FILTER HEADING ROW -->
                <tr class="filter-row">
                   <!-- Product filter -->
                   <th class="ps-3">
@@ -193,26 +198,22 @@ const AdminInventory = {
                         <input type="text" class="form-control form-control-sm border-start-0" placeholder="Filter product / SKU..." v-model="filterProduct">
                      </div>
                   </th>
-                  <!-- Store filter -->
+                  <!-- Cost filters -->
+                  <th></th>
+                  <th></th>
+                  <!-- Sale filters -->
+                  <th></th>
+                  <th></th>
+                  <!-- UOM filter -->
                   <th>
-                     <select class="form-select form-select-sm" v-model="filterStore">
-                        <option value="">All Stores</option>
-                        <option v-for="st in uniqueStores" :key="st" :value="st">{{ st }}</option>
+                     <select class="form-select form-select-sm" v-model="filterUOM">
+                        <option value="">All UOM</option>
+                        <option v-for="u in uniqueUOMs" :key="u" :value="u">{{ u }}</option>
                      </select>
                   </th>
-                  <!-- Shelf filter -->
-                  <th>
-                     <input type="text" class="form-control form-control-sm" placeholder="Shelf code..." v-model="filterShelf">
-                  </th>
-                  <!-- Cost filters -->
-                  <th colspan="2" class="text-end">
-                     <span class="x-small text-muted">Cost Valued</span>
-                  </th>
-                  <!-- Sale filters -->
-                  <th colspan="2" class="text-end">
-                     <span class="x-small text-muted">Sale Valued</span>
-                  </th>
                   <!-- On Hand header -->
+                  <th></th>
+                  <!-- Sold Qty -->
                   <th></th>
                   <!-- Current Stock / Status filter -->
                   <th>
@@ -223,7 +224,14 @@ const AdminInventory = {
                         <option value="out_of_stock">Out of Stock (=0)</option>
                      </select>
                   </th>
-                  <!-- Reset / Actions -->
+                  <!-- Store / Shelf filter -->
+                  <th>
+                     <select class="form-select form-select-sm" v-model="filterStore">
+                        <option value="">All Stores</option>
+                        <option v-for="st in uniqueStores" :key="st" :value="st">{{ st }}</option>
+                     </select>
+                  </th>
+                  <!-- Reset -->
                   <th class="text-end pe-3">
                      <button class="btn btn-sm btn-link text-muted p-0 x-small text-decoration-none" @click="resetFilters" v-if="hasActiveFilters">
                         Reset
@@ -233,59 +241,54 @@ const AdminInventory = {
             </thead>
 
             <tbody>
-               <tr v-for="s in filteredStocks" :key="s.StockID ? s.StockID : (s.StoreID + '-' + s.VariantID)" class="stock-row" @click="inspectStock(s)" title="Click to inspect where this stock is located & return store">
+               <tr v-for="s in filteredStocks" :key="s.StockID ? s.StockID : (s.StoreID + '-' + s.VariantID)" class="stock-row" @click="inspectStock(s)" title="Click row to inspect where this stock moved (sale/transfer) & physical shelves">
                   <!-- 1. Product & Specs -->
                   <td class="ps-3">
                      <div class="fw-bold text-dark">{{ s.productName }}</div>
-                     <div class="small text-muted d-flex align-items-center gap-1 mt-1">
+                     <div class="small text-muted d-flex align-items-center gap-1 mt-1 flex-wrap">
                         <span class="badge bg-light text-dark border">SKU: {{ s.sku }}</span>
                         <span v-if="s.specs" class="text-secondary fw-semibold">{{ s.specs }}</span>
-                        <span class="badge bg-secondary-subtle text-secondary">{{ s.unit }}</span>
                      </div>
                   </td>
 
-                  <!-- 2. Store -->
-                  <td>
-                     <div class="fw-bold small text-dark">{{ s.storeName }}</div>
-                     <div class="x-small text-muted">{{ s.warehouseName }}</div>
-                     <span class="badge x-small" :class="s.storeType === 'Return' ? 'bg-danger text-white' : (s.storeType === 'Floor' ? 'bg-success text-white' : 'bg-secondary text-white')">
-                        {{ s.storeType || 'Store' }}
-                     </span>
-                  </td>
-
-                  <!-- 3. Shelf -->
-                  <td>
-                     <span class="badge bg-light text-primary border px-2 py-1 fw-bold fs-7">
-                        <i class="bi bi-geo-alt-fill me-1"></i> {{ s.shelfCode }}
-                     </span>
-                  </td>
-
-                  <!-- 4. Unit Cost (₹) -->
+                  <!-- 2. Unit Cost (₹) -->
                   <td class="text-end fw-semibold text-muted small">
                      ₹{{ s.unitCost.toFixed(2) }}
                   </td>
 
-                  <!-- 5. COST VALUE (₹) (Requested) -->
+                  <!-- 3. COST VALUE (₹) -->
                   <td class="text-end fw-bold text-dark">
                      ₹{{ s.costValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                   </td>
 
-                  <!-- 6. Unit Sale Price (₹) -->
+                  <!-- 4. Sale Price (₹) -->
                   <td class="text-end fw-semibold text-primary small">
                      ₹{{ s.unitSalePrice.toFixed(2) }}
                   </td>
 
-                  <!-- 7. SALE VALUE (₹) (Requested) -->
+                  <!-- 5. SALE VALUE (₹) -->
                   <td class="text-end fw-bold text-primary">
                      ₹{{ s.saleValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                   </td>
 
-                  <!-- 8. On Hand -->
+                  <!-- 6. Unit of Measurement (UOM) -->
+                  <td class="text-center">
+                     <span class="badge bg-secondary-subtle text-secondary fw-bold px-2 py-1">{{ s.unit }}</span>
+                  </td>
+
+                  <!-- 7. On Hand -->
                   <td class="text-center fw-bold text-dark">
                      {{ s.OnHandQty || 0 }}
                   </td>
 
-                  <!-- 9. CURRENT STOCK (Available) (Requested: CURRENT STOCK HEADING) -->
+                  <!-- 8. Sold Qty -->
+                  <td class="text-center">
+                     <span class="badge bg-info-subtle text-info fw-bold px-2 py-1">
+                        {{ s.SoldQty || 0 }}
+                     </span>
+                  </td>
+
+                  <!-- 9. CURRENT STOCK (Available) -->
                   <td class="text-center bg-success-subtle border-start border-end">
                      <span class="fw-bold fs-6" :class="s.AvailableQty > 0 ? 'text-success' : 'text-danger'">
                         {{ s.AvailableQty || 0 }}
@@ -295,16 +298,34 @@ const AdminInventory = {
                      </div>
                   </td>
 
-                  <!-- 10. Location & Return Store Action -->
+                  <!-- 10. Location & Return -->
+                  <td>
+                     <div class="small fw-bold text-dark">{{ s.storeName }}</div>
+                     <div class="d-flex align-items-center gap-1 mt-1">
+                        <span class="badge bg-light text-primary border px-2 py-0 x-small fw-bold">
+                           <i class="bi bi-geo-alt-fill me-1"></i> {{ s.shelfCode }}
+                        </span>
+                        <span v-if="s.returnStore" class="badge bg-danger-subtle text-danger x-small" title="Return Store Shelf">
+                           Ret: {{ s.returnStore.ShelfCode || 'RT01' }}
+                        </span>
+                     </div>
+                  </td>
+
+                  <!-- 11. Actions: Row Inspection & Inventory Audit Button -->
                   <td class="text-end pe-3" @click.stop>
-                     <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" @click="inspectStock(s)">
-                        <i class="bi bi-pin-map-fill me-1"></i> View Location
-                     </button>
+                     <div class="d-flex justify-content-end gap-1">
+                        <button class="btn btn-sm btn-outline-primary" @click="inspectStock(s)" title="Kaha se kaha gaya (Sales/Transfer trail) & Shelves">
+                           <i class="bi bi-eye-fill"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success fw-bold shadow-sm" @click="openInventoryAuditModal(s)" title="Porana stock kitna hai check karke input dalna">
+                           <i class="bi bi-clipboard-check me-1"></i> Inventory
+                        </button>
+                     </div>
                   </td>
                </tr>
 
                <tr v-if="filteredStocks.length === 0">
-                  <td colspan="10" class="text-center py-5 text-muted">
+                  <td colspan="11" class="text-center py-5 text-muted">
                      <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
                      No inventory records found matching your filters.
                   </td>
@@ -314,34 +335,36 @@ const AdminInventory = {
             <!-- Table Footer with Column Totals -->
             <tfoot class="bg-light fw-bold" v-if="filteredStocks.length > 0">
                <tr>
-                  <td colspan="3" class="ps-3 text-uppercase">Page Totals ({{ filteredStocks.length }} Items):</td>
+                  <td class="ps-3 text-uppercase">Page Totals:</td>
                   <td class="text-end text-muted small">-</td>
                   <td class="text-end text-dark">₹{{ summaryStats.totalCostValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
                   <td class="text-end text-muted small">-</td>
                   <td class="text-end text-primary">₹{{ summaryStats.totalSaleValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</td>
+                  <td class="text-center">-</td>
                   <td class="text-center text-dark">{{ summaryStats.totalOnHand }}</td>
+                  <td class="text-center text-info">{{ summaryStats.totalSold }}</td>
                   <td class="text-center bg-success-subtle text-success fs-6">{{ summaryStats.totalCurrentStock }} Units</td>
-                  <td></td>
+                  <td colspan="2"></td>
                </tr>
             </tfoot>
           </table>
         </div>
       </div>
 
-      <!-- MODAL: Stock Location & Return Store Inspector -->
+      <!-- MODAL 1: Row Click -> Stock Location & Movement History ("Kaha se kaha gaya sale ya transfer & koun se store ke shelf me kitna hai") -->
       <div class="modal fade" id="stockLocationModal" tabindex="-1" ref="stockLocationModal">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
           <div class="modal-content border-0 shadow" v-if="selectedStockItem">
             <div class="modal-header bg-dark text-white">
               <h5 class="modal-title fw-bold">
-                 <i class="bi bi-pin-map-fill text-primary me-2"></i> Stock Locations & Return Store
+                 <i class="bi bi-clock-history text-primary me-2"></i> Item Movement & Shelf Location Trail
               </h5>
               <button type="button" class="btn-close btn-close-white" @click="closeLocationModal()"></button>
             </div>
             <div class="modal-body p-4">
                <!-- Product Header Info -->
                <div class="card bg-light border-0 p-3 mb-4">
-                  <div class="d-flex justify-content-between align-items-center">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
                      <div>
                         <h5 class="fw-bold text-dark mb-1">{{ selectedStockItem.productName }}</h5>
                         <div class="small text-muted">
@@ -354,101 +377,303 @@ const AdminInventory = {
                            <strong>Sale Price:</strong> ₹{{ selectedStockItem.unitSalePrice.toFixed(2) }}
                         </div>
                      </div>
-                     <div class="text-end">
-                        <div class="text-muted x-small text-uppercase fw-bold">CURRENT STOCK</div>
-                        <h3 class="fw-bold text-success mb-0">{{ selectedStockItem.AvailableQty || 0 }} Units</h3>
-                        <div class="x-small text-muted">Cost Value: ₹{{ selectedStockItem.costValue.toFixed(2) }}</div>
+                     <div class="d-flex gap-3 text-end">
+                        <div class="p-2 bg-white rounded border">
+                           <div class="text-muted x-small text-uppercase fw-bold">ON HAND</div>
+                           <h4 class="fw-bold text-dark mb-0">{{ selectedStockItem.OnHandQty || 0 }}</h4>
+                        </div>
+                        <div class="p-2 bg-white rounded border">
+                           <div class="text-muted x-small text-uppercase fw-bold text-info">TOTAL SOLD</div>
+                           <h4 class="fw-bold text-info mb-0">{{ selectedStockItem.SoldQty || 0 }}</h4>
+                        </div>
+                        <div class="p-2 bg-white rounded border border-success">
+                           <div class="text-muted x-small text-uppercase fw-bold text-success">CURRENT STOCK</div>
+                           <h4 class="fw-bold text-success mb-0">{{ selectedStockItem.AvailableQty || 0 }}</h4>
+                        </div>
                      </div>
                   </div>
                </div>
 
-               <!-- SECTION 1: KAHA PAR HAI STOCK (All Current Locations) -->
-               <div class="card border-0 shadow-sm location-card mb-4 p-3 bg-white">
-                  <h6 class="fw-bold text-primary mb-3">
-                     <i class="bi bi-geo-alt-fill me-1"></i> Kaha Par Hai Stock (Physical Locations)
-                  </h6>
-                  <div class="table-responsive">
-                     <table class="table table-sm align-middle table-bordered mb-0">
-                        <thead class="bg-light small">
-                           <tr>
-                              <th>Warehouse</th>
-                              <th>Store</th>
-                              <th>Shelf Code</th>
-                              <th class="text-center">On Hand</th>
-                              <th class="text-center">Available (Current Stock)</th>
-                              <th>Type</th>
-                           </tr>
-                        </thead>
-                        <tbody>
-                           <tr v-for="(loc, idx) in itemLocations" :key="idx" :class="loc.StoreID === selectedStockItem.StoreID ? 'table-primary' : ''">
-                              <td class="fw-bold small">{{ loc.WarehouseName }}</td>
-                              <td class="small">{{ loc.StoreName }}</td>
-                              <td>
-                                 <span class="badge bg-light text-primary border fw-bold">{{ loc.ShelfCode }}</span>
-                              </td>
-                              <td class="text-center fw-bold">{{ loc.OnHandQty }}</td>
-                              <td class="text-center fw-bold" :class="loc.AvailableQty > 0 ? 'text-success' : 'text-danger'">
-                                 {{ loc.AvailableQty }}
-                              </td>
-                              <td>
-                                 <span v-if="loc.IsReturnStore" class="badge bg-danger text-white">Return Store</span>
-                                 <span v-else-if="loc.StoreType === 'Floor'" class="badge bg-success text-white">Floor Store</span>
-                                 <span v-else class="badge bg-secondary text-white">{{ loc.StoreType || 'Standard' }}</span>
-                                 <span v-if="loc.StoreID === selectedStockItem.StoreID" class="badge bg-primary ms-1">Current Row</span>
-                              </td>
-                           </tr>
-                           <tr v-if="itemLocations.length === 0">
-                              <td colspan="6" class="text-center py-3 text-muted small">
-                                 No other stock locations found for this item.
-                              </td>
-                           </tr>
-                        </tbody>
-                     </table>
-                  </div>
-               </div>
+               <!-- NAV TABS: 1. Kaha Se Kaha Gaya (Movements) | 2. Shelf Locations | 3. Return Store -->
+               <ul class="nav nav-tabs mb-3" role="tablist">
+                  <li class="nav-item">
+                     <button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tab-movements" type="button">
+                        <i class="bi bi-arrow-left-right text-primary me-1"></i> Kaha Se Kaha Gaya (Sale ya Transfer Audit Trail)
+                     </button>
+                  </li>
+                  <li class="nav-item">
+                     <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-locations" type="button">
+                        <i class="bi bi-geo-alt-fill text-success me-1"></i> Shelf Locations (Koun Se Store Ke Shelf Me Hai Kitna Hai)
+                     </button>
+                  </li>
+                  <li class="nav-item">
+                     <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tab-returns" type="button">
+                        <i class="bi bi-arrow-return-left text-danger me-1"></i> Return Store Location
+                     </button>
+                  </li>
+               </ul>
 
-               <!-- SECTION 2: KOUNSA RETURN STORE HAI (Designated Return Store) -->
-               <div class="card border-0 shadow-sm return-card p-3">
-                  <h6 class="fw-bold text-danger mb-2">
-                     <i class="bi bi-arrow-return-left me-1"></i> Designated Return Store (Kounsa Return Store Hai)
-                  </h6>
-                  <p class="small text-muted mb-3">
-                     Any returned stock from customers or defective vendor items are stored in this warehouse's dedicated Return Store.
-                  </p>
-
-                  <div class="row g-3" v-if="selectedReturnStore">
-                     <div class="col-md-4">
-                        <div class="text-muted x-small text-uppercase fw-bold">Return Store Name</div>
-                        <div class="fw-bold text-dark mt-1">
-                           <i class="bi bi-shop me-1 text-danger"></i> {{ selectedReturnStore.StoreName }}
-                        </div>
-                        <div class="x-small text-muted">{{ selectedReturnStore.WarehouseName }}</div>
+               <div class="tab-content">
+                  <!-- TAB 1: KAHA SE KAHA GAYA (Movements Trail) -->
+                  <div class="tab-pane fade show active" id="tab-movements">
+                     <div v-if="loadingAudit" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                        <span class="ms-2 text-muted">Loading movement logs...</span>
                      </div>
-                     <div class="col-md-4">
-                        <div class="text-muted x-small text-uppercase fw-bold">Return Shelf Location</div>
-                        <div class="mt-1">
-                           <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 fw-bold fs-7">
-                              <i class="bi bi-geo-alt-fill me-1"></i> {{ selectedReturnStore.ShelfCode || 'RT01' }}
-                           </span>
-                        </div>
-                     </div>
-                     <div class="col-md-4">
-                        <div class="text-muted x-small text-uppercase fw-bold">Current Stock in Return Store</div>
-                        <div class="fw-bold fs-5 mt-1" :class="selectedReturnStore.ReturnStockQty > 0 ? 'text-danger' : 'text-success'">
-                           {{ selectedReturnStore.ReturnStockQty || 0 }} Units
-                        </div>
-                        <div class="x-small text-muted">
-                           {{ selectedReturnStore.ReturnStockQty > 0 ? '⚠️ Has pending returned units' : '✅ No returned units in storage' }}
-                        </div>
+                     <div v-else class="table-responsive">
+                        <table class="table table-sm align-middle table-hover border">
+                           <thead class="bg-light small text-uppercase">
+                              <tr>
+                                 <th>Date & Time</th>
+                                 <th>Movement Type</th>
+                                 <th>From (Store / Shelf)</th>
+                                 <th>To (Store / Shelf)</th>
+                                 <th class="text-center">Qty</th>
+                                 <th>Performed By (Officer)</th>
+                                 <th>Remarks</th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              <tr v-for="m in auditMovements" :key="m.movementId">
+                                 <td class="small text-muted">{{ m.date }}</td>
+                                 <td>
+                                    <span class="badge" :class="getMovementBadge(m.type)">{{ m.type }}</span>
+                                 </td>
+                                 <td class="small fw-semibold text-danger">{{ m.from }}</td>
+                                 <td class="small fw-semibold text-success">{{ m.to }}</td>
+                                 <td class="text-center fw-bold fs-7">{{ m.qty }}</td>
+                                 <td class="small">
+                                    <i class="bi bi-person-badge me-1 text-primary"></i> {{ m.officer }}
+                                 </td>
+                                 <td class="small text-muted">{{ m.remarks || '—' }}</td>
+                              </tr>
+                              <tr v-if="auditMovements.length === 0">
+                                 <td colspan="7" class="text-center py-4 text-muted">
+                                    <i class="bi bi-inbox me-1"></i> No movement records found for this product yet.
+                                 </td>
+                              </tr>
+                           </tbody>
+                        </table>
                      </div>
                   </div>
-                  <div v-else class="text-muted small">
-                     No Return Store configured for this warehouse yet.
+
+                  <!-- TAB 2: SHELF LOCATIONS (Koun se store ke shelf me hai kitna hai) -->
+                  <div class="tab-pane fade" id="tab-locations">
+                     <div class="table-responsive">
+                        <table class="table table-sm align-middle table-bordered mb-0">
+                           <thead class="bg-light small">
+                              <tr>
+                                 <th>Warehouse</th>
+                                 <th>Store</th>
+                                 <th>Shelf Code</th>
+                                 <th class="text-center">On Hand Qty</th>
+                                 <th class="text-center">Available (Current Stock)</th>
+                                 <th>Store Type</th>
+                                 <th class="text-end">Quick Action</th>
+                              </tr>
+                           </thead>
+                           <tbody>
+                              <tr v-for="(loc, idx) in itemLocations" :key="idx" :class="loc.StoreID === selectedStockItem.StoreID ? 'table-primary' : ''">
+                                 <td class="fw-bold small">{{ loc.WarehouseName || loc.warehouseName }}</td>
+                                 <td class="small">{{ loc.StoreName || loc.storeName }}</td>
+                                 <td>
+                                    <span class="badge bg-light text-primary border fw-bold fs-7">
+                                       <i class="bi bi-geo-alt-fill me-1"></i> {{ loc.ShelfCode || loc.shelfCode }}
+                                    </span>
+                                 </td>
+                                 <td class="text-center fw-bold">{{ loc.OnHandQty !== undefined ? loc.OnHandQty : loc.onHandQty }}</td>
+                                 <td class="text-center fw-bold" :class="(loc.AvailableQty || loc.availableQty) > 0 ? 'text-success' : 'text-danger'">
+                                    {{ loc.AvailableQty !== undefined ? loc.AvailableQty : loc.availableQty }}
+                                 </td>
+                                 <td>
+                                    <span v-if="loc.IsReturnStore || loc.storeType === 'Return'" class="badge bg-danger text-white">Return Store</span>
+                                    <span v-else-if="(loc.StoreType || loc.storeType) === 'Floor'" class="badge bg-success text-white">Floor Store</span>
+                                    <span v-else class="badge bg-secondary text-white">{{ loc.StoreType || loc.storeType || 'Standard' }}</span>
+                                    <span v-if="loc.StoreID === selectedStockItem.StoreID" class="badge bg-primary ms-1">Selected Store</span>
+                                 </td>
+                                 <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-success fw-bold py-0 px-2" @click="openInventoryAuditForShelf(loc)">
+                                       <i class="bi bi-clipboard-check me-1"></i> Audit Shelf
+                                    </button>
+                                 </td>
+                              </tr>
+                              <tr v-if="itemLocations.length === 0">
+                                 <td colspan="7" class="text-center py-3 text-muted small">
+                                    No physical stock locations found for this item.
+                                 </td>
+                              </tr>
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
+
+                  <!-- TAB 3: DESIGNATED RETURN STORE -->
+                  <div class="tab-pane fade" id="tab-returns">
+                     <div class="card border-0 shadow-sm return-card p-3">
+                        <h6 class="fw-bold text-danger mb-2">
+                           <i class="bi bi-arrow-return-left me-1"></i> Designated Return Store
+                        </h6>
+                        <p class="small text-muted mb-3">
+                           Returned customer items or rejected stock are placed in this store's return shelf.
+                        </p>
+
+                        <div class="row g-3" v-if="selectedReturnStore">
+                           <div class="col-md-4">
+                              <div class="text-muted x-small text-uppercase fw-bold">Return Store Name</div>
+                              <div class="fw-bold text-dark mt-1">
+                                 <i class="bi bi-shop me-1 text-danger"></i> {{ selectedReturnStore.StoreName }}
+                              </div>
+                              <div class="x-small text-muted">{{ selectedReturnStore.WarehouseName }}</div>
+                           </div>
+                           <div class="col-md-4">
+                              <div class="text-muted x-small text-uppercase fw-bold">Return Shelf Location</div>
+                              <div class="mt-1">
+                                 <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 fw-bold fs-7">
+                                    <i class="bi bi-geo-alt-fill me-1"></i> {{ selectedReturnStore.ShelfCode || 'RT01' }}
+                                 </span>
+                              </div>
+                           </div>
+                           <div class="col-md-4">
+                              <div class="text-muted x-small text-uppercase fw-bold">Current Stock in Return Store</div>
+                              <div class="fw-bold fs-5 mt-1" :class="selectedReturnStore.ReturnStockQty > 0 ? 'text-danger' : 'text-success'">
+                                 {{ selectedReturnStore.ReturnStockQty || 0 }} Units
+                              </div>
+                           </div>
+                        </div>
+                        <div v-else class="text-muted small">
+                           No Return Store configured for this warehouse yet.
+                        </div>
+                     </div>
                   </div>
                </div>
             </div>
             <div class="modal-footer bg-light">
               <button type="button" class="btn btn-secondary fw-bold" @click="closeLocationModal()">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 2: INVENTORY AUDIT / PHYSICAL COUNT MODAL ("jab inventory click kare tu porana stock kitna hai kaha kaha hai ab kitna check karke input dalna or check koun karta tha") -->
+      <div class="modal fade" id="inventoryAuditModal" tabindex="-1" ref="inventoryAuditModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content border-0 shadow" v-if="auditTargetItem">
+            <div class="modal-header bg-success text-white">
+              <h5 class="modal-title fw-bold">
+                 <i class="bi bi-clipboard-check me-2"></i> Physical Stock Audit & Verification (Inventory Check)
+              </h5>
+              <button type="button" class="btn-close btn-close-white" @click="closeInventoryAuditModal()"></button>
+            </div>
+
+            <div class="modal-body p-4">
+               <!-- Product Summary Banner -->
+               <div class="alert alert-light border d-flex justify-content-between align-items-center mb-4">
+                  <div>
+                     <h6 class="fw-bold text-dark mb-1">{{ auditTargetItem.productName }}</h6>
+                     <div class="small text-muted">
+                        SKU: <strong>{{ auditTargetItem.sku }}</strong> | 
+                        Specs: <strong>{{ auditTargetItem.specs || 'Standard' }}</strong> | 
+                        UOM: <strong>{{ auditTargetItem.unit }}</strong>
+                     </div>
+                  </div>
+                  <div class="text-end">
+                     <span class="badge bg-success-subtle text-success fs-7 px-3 py-2 fw-bold">
+                        Current System Stock: {{ auditTargetItem.OnHandQty || 0 }} {{ auditTargetItem.unit }}
+                     </span>
+                  </div>
+               </div>
+
+               <!-- Shelf Selection & Porana Stock Info -->
+               <div class="row g-3 mb-3">
+                  <div class="col-md-6">
+                     <label class="form-label fw-bold small text-muted text-uppercase">
+                        <i class="bi bi-shop me-1 text-primary"></i> Target Store:
+                     </label>
+                     <select class="form-select fw-bold" v-model.number="auditForm.storeId" @change="onAuditStoreChange">
+                        <option v-for="st in auditTargetItemLocations" :key="st.storeId || st.StoreID" :value="st.storeId || st.StoreID">
+                           {{ st.storeName || st.StoreName }} ({{ st.shelfCode || st.ShelfCode }})
+                        </option>
+                     </select>
+                  </div>
+
+                  <div class="col-md-6">
+                     <label class="form-label fw-bold small text-muted text-uppercase">
+                        <i class="bi bi-geo-alt me-1 text-primary"></i> Shelf Location:
+                     </label>
+                     <input type="text" class="form-control bg-light fw-bold" :value="currentAuditLocation ? (currentAuditLocation.shelfCode || currentAuditLocation.ShelfCode) : 'FL01'" readonly>
+                  </div>
+               </div>
+
+               <!-- Porana Stock vs Ab Kitna Check Kiya Input -->
+               <div class="card border-0 shadow-sm audit-card p-3 mb-4">
+                  <div class="row g-3 align-items-center">
+                     <!-- Porana Stock (System Stock) -->
+                     <div class="col-md-5 text-center border-end">
+                        <div class="text-muted x-small text-uppercase fw-bold">Porana Stock (System On-Hand)</div>
+                        <h3 class="fw-bold text-dark mt-2 mb-0">
+                           {{ currentAuditOldQty }} <small class="fs-6 text-muted">{{ auditTargetItem.unit }}</small>
+                        </h3>
+                        <div class="x-small text-muted mt-1">Recorded in database for this shelf</div>
+                     </div>
+
+                     <!-- Ab Kitna Check Kiya (Physical Count Input) -->
+                     <div class="col-md-7">
+                        <label class="form-label fw-bold text-success text-uppercase small mb-1">
+                           <i class="bi bi-input-cursor-text me-1"></i> Ab Kitna Check Kiya (Physical Count Input):
+                        </label>
+                        <div class="input-group">
+                           <input type="number" class="form-control form-control-lg fw-bold border-success text-success" 
+                                  v-model.number="auditForm.newQty" 
+                                  min="0" step="any" placeholder="Enter physical counted qty...">
+                           <span class="input-group-text bg-success text-white fw-bold">{{ auditTargetItem.unit }}</span>
+                        </div>
+                        <div class="x-small mt-1" :class="auditQtyDiff === 0 ? 'text-success' : (auditQtyDiff > 0 ? 'text-primary' : 'text-danger')">
+                           Difference: <strong>{{ auditQtyDiff > 0 ? '+' : '' }}{{ auditQtyDiff }} {{ auditTargetItem.unit }}</strong>
+                           <span v-if="auditQtyDiff !== 0"> (Stock will be adjusted automatically)</span>
+                           <span v-else> (Exact match - no variance)</span>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               <!-- Check Koun Karta Tha (Auditor Officer Name & Staff ID) -->
+               <div class="row g-3 mb-3">
+                  <div class="col-md-6">
+                     <label class="form-label fw-bold small text-muted text-uppercase">
+                        <i class="bi bi-person-badge-fill me-1 text-primary"></i> Check Koun Karta Tha (Officer Name):
+                     </label>
+                     <input type="text" class="form-control" v-model="auditForm.auditorName" placeholder="Enter officer / auditor name (e.g. Rahul Sharma)">
+                  </div>
+
+                  <div class="col-md-6">
+                     <label class="form-label fw-bold small text-muted text-uppercase">
+                        <i class="bi bi-card-text me-1 text-primary"></i> Officer / Staff ID:
+                     </label>
+                     <input type="text" class="form-control" v-model="auditForm.auditorId" placeholder="Enter Staff ID (e.g. OFF-042)">
+                  </div>
+               </div>
+
+               <!-- Audit Notes / Reason -->
+               <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted text-uppercase">
+                     <i class="bi bi-chat-left-text me-1 text-primary"></i> Verification Notes / Audit Remarks:
+                  </label>
+                  <input type="text" class="form-control" v-model="auditForm.notes" placeholder="e.g. Physical inventory count verified on shelf">
+               </div>
+
+               <!-- Error / Success Alert -->
+               <div v-if="auditAlert.show" class="alert alert-dismissible" :class="auditAlert.type === 'success' ? 'alert-success' : 'alert-danger'">
+                  <i class="bi" :class="auditAlert.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>
+                  {{ auditAlert.message }}
+               </div>
+            </div>
+
+            <div class="modal-footer bg-light">
+               <button type="button" class="btn btn-secondary fw-bold" @click="closeInventoryAuditModal()">Cancel</button>
+               <button type="button" class="btn btn-success fw-bold px-4 shadow-sm" :disabled="submittingAudit || auditForm.newQty === null" @click="submitAuditAdjustment">
+                  <span v-if="submittingAudit" class="spinner-border spinner-border-sm me-1"></span>
+                  <i v-else class="bi bi-check-all me-1"></i> Confirm & Reconcile Stock
+               </button>
             </div>
           </div>
         </div>
@@ -465,17 +690,34 @@ const AdminInventory = {
       stocks: [],
       loading: false,
 
-      // Column Filters (Requested: "fitter heading row hona add karoyeh")
+      // Column Filters
       filterProduct: '',
       filterStore: '',
-      filterShelf: '',
+      filterUOM: '',
       filterStockStatus: '', // '', 'in_stock', 'low_stock', 'out_of_stock'
       
-      // Modal
+      // Modal 1: Location & Movement History
       selectedStockItem: null,
       itemLocations: [],
       selectedReturnStore: null,
-      locationModalInstance: null
+      auditMovements: [],
+      loadingAudit: false,
+      locationModalInstance: null,
+
+      // Modal 2: Physical Inventory Count & Verification
+      auditTargetItem: null,
+      auditTargetItemLocations: [],
+      auditForm: {
+        storeId: null,
+        shelfId: null,
+        newQty: null,
+        auditorName: 'Warehouse Auditor',
+        auditorId: 'OFF-001',
+        notes: 'Routine Physical Stock Count'
+      },
+      submittingAudit: false,
+      auditAlert: { show: false, message: '', type: 'success' },
+      inventoryModalInstance: null
     };
   },
   computed: {
@@ -487,8 +729,12 @@ const AdminInventory = {
       const names = this.stocks.map(s => s.storeName).filter(Boolean);
       return Array.from(new Set(names)).sort();
     },
+    uniqueUOMs() {
+      const uoms = this.stocks.map(s => s.unit).filter(Boolean);
+      return Array.from(new Set(uoms)).sort();
+    },
     hasActiveFilters() {
-      return !!(this.filterProduct || this.filterStore || this.filterShelf || this.filterStockStatus);
+      return !!(this.filterProduct || this.filterStore || this.filterUOM || this.filterStockStatus);
     },
     filteredStocks() {
       return this.stocks.filter(s => {
@@ -509,11 +755,8 @@ const AdminInventory = {
         // Filter Heading Row: Store filter
         if (this.filterStore && s.storeName !== this.filterStore) return false;
 
-        // Filter Heading Row: Shelf filter
-        if (this.filterShelf) {
-          const sh = this.filterShelf.toLowerCase();
-          if (!(s.shelfCode || '').toLowerCase().includes(sh)) return false;
-        }
+        // Filter Heading Row: UOM filter
+        if (this.filterUOM && s.unit !== this.filterUOM) return false;
 
         // Filter Heading Row: Stock Status filter
         if (this.filterStockStatus === 'in_stock' && (s.AvailableQty || 0) <= 0) return false;
@@ -526,14 +769,14 @@ const AdminInventory = {
     summaryStats() {
       let currentStock = 0;
       let onHand = 0;
-      let reserved = 0;
+      let sold = 0;
       let costVal = 0;
       let saleVal = 0;
 
       for (const s of this.filteredStocks) {
         currentStock += (s.AvailableQty || 0);
         onHand += (s.OnHandQty || 0);
-        reserved += (s.ReservedQty || 0);
+        sold += (s.SoldQty || 0);
         costVal += (s.costValue || 0);
         saleVal += (s.saleValue || 0);
       }
@@ -544,17 +787,33 @@ const AdminInventory = {
       return {
         totalCurrentStock: currentStock,
         totalOnHand: onHand,
-        totalReserved: reserved,
+        totalSold: sold,
         totalCostValue: costVal,
         totalSaleValue: saleVal,
         totalProfitValue: profit,
         marginPercent: margin
       };
+    },
+    currentAuditLocation() {
+      if (!this.auditTargetItemLocations || this.auditTargetItemLocations.length === 0) return null;
+      return this.auditTargetItemLocations.find(l => (l.storeId || l.StoreID) === this.auditForm.storeId) || this.auditTargetItemLocations[0];
+    },
+    currentAuditOldQty() {
+      const loc = this.currentAuditLocation;
+      if (!loc) return 0;
+      return loc.onHandQty !== undefined ? loc.onHandQty : (loc.OnHandQty || 0);
+    },
+    auditQtyDiff() {
+      if (this.auditForm.newQty === null || this.auditForm.newQty === undefined) return 0;
+      return this.auditForm.newQty - this.currentAuditOldQty;
     }
   },
   async mounted() {
     if (this.$refs.stockLocationModal) {
       this.locationModalInstance = new bootstrap.Modal(this.$refs.stockLocationModal);
+    }
+    if (this.$refs.inventoryAuditModal) {
+      this.inventoryModalInstance = new bootstrap.Modal(this.$refs.inventoryAuditModal);
     }
     await this.init();
   },
@@ -585,7 +844,7 @@ const AdminInventory = {
     resetFilters() {
       this.filterProduct = '';
       this.filterStore = '';
-      this.filterShelf = '';
+      this.filterUOM = '';
       this.filterStockStatus = '';
     },
     async fetchStock() {
@@ -595,7 +854,7 @@ const AdminInventory = {
         allStocks(WarehouseID: $wid, StoreID: $sid) {
           StockID StoreID VariantID ShelfID OnHandQty ReservedQty AvailableQty
           WarehouseID WarehouseName StoreName StoreType ShelfCode
-          UnitCost UnitSalePrice CostValue SaleValue
+          UnitCost UnitSalePrice CostValue SaleValue SoldQty
           variant {
             VariantID ProductID SKU Size Color Unit MRP SalePrice Cost
             product { ProductID ProductName }
@@ -635,6 +894,7 @@ const AdminInventory = {
             OnHandQty: s.OnHandQty || 0,
             ReservedQty: s.ReservedQty || 0,
             AvailableQty: s.AvailableQty || 0,
+            SoldQty: s.SoldQty || 0,
             unitCost: uCost,
             unitSalePrice: uSale,
             costValue: cVal,
@@ -658,7 +918,9 @@ const AdminInventory = {
         this.loading = false;
       }
     },
-    inspectStock(s) {
+
+    // Row Click Action -> Inspect Locations & Movement Audit Trail (Kaha se kaha gaya)
+    async inspectStock(s) {
       this.selectedStockItem = s;
       this.itemLocations = s.allLocations && s.allLocations.length > 0 ? s.allLocations : [{
         WarehouseName: s.warehouseName,
@@ -672,13 +934,151 @@ const AdminInventory = {
         StoreID: s.StoreID
       }];
       this.selectedReturnStore = s.returnStore;
+      this.auditMovements = [];
+      this.loadingAudit = true;
+
       if (this.locationModalInstance) {
         this.locationModalInstance.show();
       }
+
+      // Fetch Movement Audit from backend
+      try {
+        const resp = await fetch(`/api/admin/inventory/movement-audit/${s.VariantID}`);
+        const data = await resp.json();
+        if (data.success) {
+          this.auditMovements = data.movements || [];
+          if (data.locations && data.locations.length > 0) {
+            this.itemLocations = data.locations;
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching movement audit:", err);
+      } finally {
+        this.loadingAudit = false;
+      }
     },
+
     closeLocationModal() {
       if (this.locationModalInstance) {
         this.locationModalInstance.hide();
+      }
+    },
+
+    getMovementBadge(type) {
+      const t = (type || '').toUpperCase();
+      if (t === 'SALE' || t === 'OUTBOUND') return 'bg-danger text-white';
+      if (t === 'TRANSFER' || t === 'PUTAWAY') return 'bg-primary text-white';
+      if (t === 'INWARD' || t === 'GRN') return 'bg-success text-white';
+      if (t === 'AUDIT' || t === 'ADJUSTMENT') return 'bg-warning text-dark';
+      return 'bg-secondary text-white';
+    },
+
+    // Inventory Button Click -> Open Physical Audit Modal
+    openInventoryAuditModal(s) {
+      this.auditTargetItem = s;
+      this.auditAlert.show = false;
+
+      // Populate locations list
+      if (s.allLocations && s.allLocations.length > 0) {
+        this.auditTargetItemLocations = s.allLocations;
+      } else {
+        this.auditTargetItemLocations = [{
+          storeId: s.StoreID,
+          storeName: s.storeName,
+          shelfId: s.ShelfID,
+          shelfCode: s.shelfCode,
+          onHandQty: s.OnHandQty,
+          availableQty: s.AvailableQty
+        }];
+      }
+
+      this.auditForm.storeId = s.StoreID;
+      this.auditForm.shelfId = s.ShelfID;
+      this.auditForm.newQty = s.OnHandQty || 0;
+      this.auditForm.auditorName = localStorage.getItem('userName') || 'Warehouse Officer';
+      this.auditForm.auditorId = localStorage.getItem('userId') ? `OFF-${localStorage.getItem('userId')}` : 'OFF-001';
+      this.auditForm.notes = 'Routine Physical Stock Count';
+
+      if (this.inventoryModalInstance) {
+        this.inventoryModalInstance.show();
+      }
+    },
+
+    openInventoryAuditForShelf(loc) {
+      if (this.locationModalInstance) {
+        this.locationModalInstance.hide();
+      }
+      this.openInventoryAuditModal(this.selectedStockItem);
+      this.auditForm.storeId = loc.storeId || loc.StoreID;
+      this.auditForm.shelfId = loc.shelfId || loc.ShelfID;
+      this.auditForm.newQty = loc.onHandQty !== undefined ? loc.onHandQty : loc.OnHandQty;
+    },
+
+    onAuditStoreChange() {
+      const loc = this.currentAuditLocation;
+      if (loc) {
+        this.auditForm.shelfId = loc.shelfId || loc.ShelfID;
+        this.auditForm.newQty = loc.onHandQty !== undefined ? loc.onHandQty : (loc.OnHandQty || 0);
+      }
+    },
+
+    closeInventoryAuditModal() {
+      if (this.inventoryModalInstance) {
+        this.inventoryModalInstance.hide();
+      }
+    },
+
+    async submitAuditAdjustment() {
+      if (!this.auditTargetItem || this.auditForm.newQty === null) return;
+      this.submittingAudit = true;
+      this.auditAlert.show = false;
+
+      try {
+        const payload = {
+          variantId: this.auditTargetItem.VariantID,
+          storeId: this.auditForm.storeId,
+          shelfId: this.auditForm.shelfId || (this.currentAuditLocation ? (this.currentAuditLocation.shelfId || this.currentAuditLocation.ShelfID) : null),
+          oldQty: this.currentAuditOldQty,
+          newQty: this.auditForm.newQty,
+          auditorName: this.auditForm.auditorName,
+          auditorId: this.auditForm.auditorId,
+          notes: this.auditForm.notes
+        };
+
+        const resp = await fetch('/api/admin/inventory/audit-adjust', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        if (data.success) {
+          this.auditAlert = {
+            show: true,
+            type: 'success',
+            message: `Stock successfully reconciled for ${this.auditTargetItem.productName}! New On-Hand: ${data.stock.onHandQty} ${this.auditTargetItem.unit}`
+          };
+          // Refresh table
+          setTimeout(() => {
+            this.closeInventoryAuditModal();
+            this.fetchStock();
+          }, 1200);
+        } else {
+          this.auditAlert = {
+            show: true,
+            type: 'danger',
+            message: data.message || 'Failed to adjust stock'
+          };
+        }
+      } catch (err) {
+        console.error("Error submitting stock audit:", err);
+        this.auditAlert = {
+          show: true,
+          type: 'danger',
+          message: err.message || 'Server error while adjusting stock'
+        };
+      } finally {
+        this.submittingAudit = false;
       }
     }
   }

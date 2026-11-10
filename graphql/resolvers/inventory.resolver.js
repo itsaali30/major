@@ -366,6 +366,19 @@ const inventoryResolvers = {
         if (!isNaN(mrpNum)) sale = mrpNum;
       }
       return Math.round(qty * sale * 100) / 100;
+    },
+    SoldQty: async (parent) => {
+      try {
+        const movements = await prisma.stockMovements.findMany({
+          where: {
+            VariantID: parent.VariantID,
+            Type: { in: ['SALE', 'OUTBOUND', 'PICKING', 'sale', 'outbound', 'picking'] }
+          }
+        });
+        return movements.reduce((acc, m) => acc + (m.Qty || 0), 0);
+      } catch (e) {
+        return 0;
+      }
     }
   }
 };
